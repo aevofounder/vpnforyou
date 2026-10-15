@@ -43,13 +43,15 @@ jobs:
 
       - name: Build Debug app
         run: |
+          set -o pipefail
           xcodebuild \
             -project VPNforYou.xcodeproj \
             -scheme VPNforYou \
             -configuration Debug \
             -destination 'platform=macOS' \
             -derivedDataPath build/DerivedData \
-            build
+            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" \
+            || { echo "::group::Compiler errors"; grep -E ": error:" "$RUNNER_TEMP/xcodebuild.log" | sort -u; echo "::endgroup::"; exit 1; }
 
       - name: Render screens
         run: |

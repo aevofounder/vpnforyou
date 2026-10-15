@@ -62,6 +62,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           BUILD_NUMBER: ${{ github.run_number }}
         run: |
+          set -o pipefail
           xcodebuild \
             -project VPNforYou.xcodeproj \
             -scheme VPNforYou \
@@ -70,7 +71,8 @@ jobs:
             -derivedDataPath build/DerivedData \
             MARKETING_VERSION="$VERSION" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-            build
+            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" \
+            || { echo "::group::Compiler errors"; grep -E ": error:" "$RUNNER_TEMP/xcodebuild.log" | sort -u; echo "::endgroup::"; exit 1; }
 
       - name: Add helper and mihomo core
         run: scripts/bundle-extras.sh "build/DerivedData/Build/Products/Release/VPNforYou.app"

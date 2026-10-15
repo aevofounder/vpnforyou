@@ -68,8 +68,9 @@ struct ActivityView: View {
     @Environment(InstalledApps.self) private var installed
     @State private var monitor: ActivityMonitor
 
-    init(monitor: ActivityMonitor = ActivityMonitor()) {
-        _monitor = State(initialValue: monitor)
+    @MainActor
+    init(monitor: ActivityMonitor? = nil) {
+        _monitor = State(initialValue: monitor ?? ActivityMonitor())
     }
 
     var body: some View {
