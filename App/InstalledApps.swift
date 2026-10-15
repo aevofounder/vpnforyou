@@ -74,7 +74,7 @@ final class InstalledApps {
         if let cached = icons[path] { return cached }
         let icon = FileManager.default.fileExists(atPath: path)
             ? NSWorkspace.shared.icon(forFile: path)
-            : NSWorkspace.shared.icon(for: .applicationBundle)
+            : NSWorkspace.shared.icon(for: .application)
         icon.size = NSSize(width: 32, height: 32)
         icons[path] = icon
         return icon

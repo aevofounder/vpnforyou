@@ -57,13 +57,13 @@ enum ScreenshotRenderer {
             stores.connect()
             return menu(stores, route: .palette)
         }
-        await shot("07-activity", folder, light, size: CGSize(width: 640, height: 470)) { stores in
+        await shot("07-activity", folder, light, width: 640, height: 430) { stores in
             stores.connect()
             let monitor = ActivityMonitor()
             monitor.previewSet(apps: Fixtures.activity, connections: 37)
             return AnyView(stores.inject(ActivityView(monitor: monitor)))
         }
-        await shot("08-settings", folder, light, size: CGSize(width: 520, height: 760)) { stores in
+        await shot("08-settings", folder, light, width: 520) { stores in
             AnyView(stores.inject(AppearanceSettingsView()))
         }
         await shot("09-home-dark", folder, Look(theme: .dark, accent: .violet)) { stores in
@@ -74,11 +74,7 @@ enum ScreenshotRenderer {
             stores.connect()
             return menu(stores, route: .servers)
         }
-        await shot("11-home-glass", folder, Look(material: .glass)) { stores in
-            stores.connect()
-            return menu(stores, route: .home)
-        }
-        await shot("12-first-run", folder, light) { stores in
+        await shot("11-first-run", folder, light) { stores in
             let empty = Stores(profiles: [])
             empty.connection.previewSet(helper: .notInstalled, connectedID: nil, since: nil, traffic: [])
             return menu(empty, route: .home)
@@ -92,8 +88,14 @@ enum ScreenshotRenderer {
         return AnyView(stores.inject(MenuContentView()))
     }
 
-    private static func shot(_ name: String, _ folder: URL, _ look: Look, size: CGSize? = nil,
-                             build: (Stores) -> AnyView) async {
+    /// A window that can be key, so switches and buttons are drawn active (in the accent color).
+    private final class SnapshotWindow: NSWindow {
+        override var canBecomeKey: Bool { true }
+        override var canBecomeMain: Bool { true }
+    }
+
+    private static func shot(_ name: String, _ folder: URL, _ look: Look, width: CGFloat = 360,
+                             height: CGFloat? = nil, build: (Stores) -> AnyView) async {
         let defaults = UserDefaults.standard
         defaults.set(look.theme.rawValue, forKey: AppearanceKey.theme)
         defaults.set(look.accent.rawValue, forKey: AppearanceKey.accent)
@@ -104,21 +106,25 @@ enum ScreenshotRenderer {
             .tint(look.accent.color)
             .environment(\.colorScheme, look.theme == .dark ? .dark : .light)
 
-        let hosting = NSHostingView(rootView: root)
+        let hosting = NSHostingView(rootView: root.frame(width: width))
         let appearance = NSAppearance(named: look.theme == .dark ? .darkAqua : .aqua)
         hosting.appearance = appearance
-        let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: size?.width ?? 360, height: size?.height ?? 600),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
+        let window = SnapshotWindow(contentRect: NSRect(x: 80, y: 80, width: width, height: height ?? 600),
+                                    styleMask: [.borderless], backing: .buffered, defer: false)
         window.appearance = appearance
         window.isReleasedWhenClosed = false
-        window.backgroundColor = look.material == .glass ? .windowBackgroundColor : NSColor(Palette.background)
+        window.backgroundColor = NSColor(Palette.background)
         window.contentView = hosting
-        if size == nil { window.setContentSize(hosting.fittingSize) }
-        window.orderFrontRegardless()
+        func fit() {
+            hosting.layoutSubtreeIfNeeded()
+            window.setContentSize(NSSize(width: width, height: height ?? hosting.fittingSize.height))
+        }
+        fit()
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
 
         try? await Task.sleep(for: .milliseconds(900))
-        hosting.layoutSubtreeIfNeeded()
-        if size == nil { window.setContentSize(hosting.fittingSize) }
+        fit()
         try? await Task.sleep(for: .milliseconds(400))
 
         let bounds = hosting.bounds
@@ -127,15 +133,6 @@ enum ScreenshotRenderer {
             if let png = rep.representation(using: .png, properties: [:]) {
                 try? png.write(to: folder.appendingPathComponent(name + ".png"))
             }
-        }
-        // The real window as the compositor sees it (glass, shadows), when screen capture is allowed.
-        let capture = Process()
-        capture.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        capture.arguments = ["-x", "-o", "-l", String(window.windowNumber),
-                             folder.appendingPathComponent(name + "-window.png").path]
-        if (try? capture.run()) != nil {
-            for _ in 0..<50 where capture.isRunning { try? await Task.sleep(for: .milliseconds(100)) }
-            if capture.isRunning { capture.terminate() }
         }
         window.orderOut(nil)
     }
@@ -217,7 +214,7 @@ enum Fixtures {
     ]
 
     static var profiles: [Profile] {
-        let group = ServerGroup(name: "⚡ Автовыбор", memberIDs: [servers[0].id, servers[1].id, servers[2].id])
+        let group = ServerGroup(name: "Автовыбор", memberIDs: [servers[0].id, servers[1].id, servers[2].id])
         let subscription = Profile(
             name: "Example VPN", source: .subscription(url: "https://sub.example.com/test-token"),
             servers: servers, groups: [group],
@@ -269,44 +266,43 @@ enum Fixtures {
                     latencyMs: 49, downloadMbps: 164.1, uploadMbps: 85.6, bytesUsed: 33_900_000),
     ]
 
-    static let throughVPN: Set<String> = ["Telegram", "Google Chrome", "Discord", "Spotify", "ChatGPT"]
+    /// Programs that exist on the CI Mac, so the icons are real.
+    static let throughVPN: Set<String> = ["Google Chrome", "Firefox", "Музыка", "Подкасты"]
 
     static var apps: [AppEntry] {
         [
-            ("ChatGPT", "/Applications/ChatGPT.app", "com.example.chatgpt"),
-            ("Discord", "/Applications/Discord.app", "com.example.discord"),
             ("Firefox", "/Applications/Firefox.app", "org.mozilla.firefox"),
             ("Google Chrome", "/Applications/Google Chrome.app", "com.google.Chrome"),
             ("Microsoft Edge", "/Applications/Microsoft Edge.app", "com.microsoft.edgemac"),
             ("Safari", "/Applications/Safari.app", "com.apple.Safari"),
-            ("Spotify", "/Applications/Spotify.app", "com.example.spotify"),
-            ("Telegram", "/Applications/Telegram.app", "org.example.telegram"),
             ("Xcode", "/Applications/Xcode.app", "com.apple.dt.Xcode"),
+            ("Заметки", "/System/Applications/Notes.app", "com.apple.Notes"),
+            ("Карты", "/System/Applications/Maps.app", "com.apple.Maps"),
             ("Музыка", "/System/Applications/Music.app", "com.apple.Music"),
+            ("Подкасты", "/System/Applications/Podcasts.app", "com.apple.podcasts"),
             ("Почта", "/System/Applications/Mail.app", "com.apple.mail"),
+            ("Терминал", "/System/Applications/Utilities/Terminal.app", "com.apple.Terminal"),
         ].map { AppEntry(path: $0.1, name: $0.0, bundleID: $0.2) }
     }
 
     static var activity: [AppActivity] {
-        [
-            AppActivity(id: "/Applications/Google Chrome.app", name: "Google Chrome", path: "/Applications/Google Chrome.app",
-                        connections: 14, viaVPN: 14, direct: 0, downPerSecond: 2_400_000, upPerSecond: 96_000,
-                        destinations: ["www.example.com", "cdn.example.net", "api.example.org"]),
-            AppActivity(id: "/Applications/Telegram.app", name: "Telegram", path: "/Applications/Telegram.app",
-                        connections: 4, viaVPN: 4, direct: 0, downPerSecond: 640_000, upPerSecond: 58_000,
-                        destinations: ["chat.example.org", "media.example.net"]),
-            AppActivity(id: "/Applications/Safari.app", name: "Safari", path: "/Applications/Safari.app",
-                        connections: 6, viaVPN: 2, direct: 4, downPerSecond: 310_000, upPerSecond: 21_000,
-                        destinations: ["news.example.com", "static.example.net"]),
-            AppActivity(id: "/Applications/Spotify.app", name: "Spotify", path: "/Applications/Spotify.app",
-                        connections: 3, viaVPN: 3, direct: 0, downPerSecond: 180_000, upPerSecond: 4_000,
-                        destinations: ["audio.example.com"]),
-            AppActivity(id: "/Applications/Xcode.app", name: "Xcode", path: "/Applications/Xcode.app",
-                        connections: 5, viaVPN: 0, direct: 5, downPerSecond: 52_000, upPerSecond: 9_000,
-                        destinations: ["developer.example.com"]),
-            AppActivity(id: "mDNSResponder", name: "mDNSResponder", path: nil,
-                        connections: 5, viaVPN: 0, direct: 5, downPerSecond: 0, upPerSecond: 0,
-                        destinations: ["192.0.2.53"]),
+        func row(_ name: String, _ path: String?, _ connections: Int, vpn: Int, down: Int64, up: Int64,
+                 _ destinations: [String]) -> AppActivity {
+            AppActivity(id: path ?? name, name: name, path: path, connections: connections, viaVPN: vpn,
+                        direct: connections - vpn, downPerSecond: down, upPerSecond: up, destinations: destinations)
+        }
+        return [
+            row("Google Chrome", "/Applications/Google Chrome.app", 14, vpn: 14, down: 2_400_000, up: 96_000,
+                ["www.example.com", "cdn.example.net", "api.example.org"]),
+            row("Музыка", "/System/Applications/Music.app", 3, vpn: 3, down: 640_000, up: 12_000,
+                ["audio.example.com"]),
+            row("Safari", "/Applications/Safari.app", 6, vpn: 2, down: 310_000, up: 21_000,
+                ["news.example.com", "static.example.net"]),
+            row("Firefox", "/Applications/Firefox.app", 4, vpn: 4, down: 180_000, up: 9_000,
+                ["mail.example.org"]),
+            row("Xcode", "/Applications/Xcode.app", 5, vpn: 0, down: 52_000, up: 9_000,
+                ["developer.example.com"]),
+            row("mDNSResponder", nil, 5, vpn: 0, down: 0, up: 0, ["192.0.2.53"]),
         ]
     }
 }

@@ -320,7 +320,7 @@ struct SpeedTestView: View {
     private var footnote: String {
         if route == .vpn, !connection.state.isConnected { return "Для теста через VPN сначала подключитесь." }
         if let used = run?.bytesUsed, used > 0, run?.isRunning == false {
-            return "Израсходовано \(Format.bytes(used)). speed.cloudflare.com"
+            return "Израсходовано \(Format.bytes(used)) · speed.cloudflare.com"
         }
         return "speed.cloudflare.com · до \(Format.bytes(SpeedTest.maxTrafficBytes)) трафика"
     }
@@ -351,7 +351,7 @@ struct SpeedTestView: View {
         case .latency: "Измеряю пинг…"
         case .download: "Загрузка…"
         case .upload: "Отдача…"
-        case .done: "Загрузка, \(run?.route.title.lowercased() ?? "")"
+        case .done: run?.route == .direct ? "Загрузка напрямую" : "Загрузка через VPN"
         case .failed: "Тест не прошёл"
         case nil: route == .vpn ? "Через выбранный сервер VPN" : "Без VPN, напрямую"
         }

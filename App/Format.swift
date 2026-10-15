@@ -2,14 +2,35 @@ import Foundation
 import VPNCore
 
 enum Format {
+    /// "29,9 МБ"; never "Zero KB".
     static func bytes(_ value: Int64) -> String {
-        ByteCountFormatter.string(fromByteCount: value, countStyle: .binary)
+        byteFormatter.string(fromByteCount: max(0, value))
     }
 
     /// Traffic rate from the core, e.g. "2,4 МБ/с".
     static func rate(_ bytesPerSecond: Int64) -> String {
-        ByteCountFormatter.string(fromByteCount: max(0, bytesPerSecond), countStyle: .decimal) + "/с"
+        byteFormatter.string(fromByteCount: max(0, bytesPerSecond)) + "/с"
     }
+
+    /// Subscription traffic in decimal GB, the way sellers count it: "102,5 ГБ из 1 000 ГБ".
+    static func traffic(_ value: Int64) -> String {
+        trafficFormatter.string(fromByteCount: max(0, value))
+    }
+
+    private static let byteFormatter: ByteCountFormatter = {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .decimal
+        formatter.allowsNonnumericFormatting = false
+        return formatter
+    }()
+
+    private static let trafficFormatter: ByteCountFormatter = {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .decimal
+        formatter.allowedUnits = [.useMB, .useGB]
+        formatter.allowsNonnumericFormatting = false
+        return formatter
+    }()
 
     /// Speed test number without the unit: "95,3", "940", "0,8".
     static func mbps(_ value: Double) -> String {
@@ -33,9 +54,9 @@ enum Format {
     static func usage(_ usage: SubscriptionUsage) -> String {
         var parts: [String] = []
         if let total = usage.total {
-            parts.append("\(bytes(usage.used)) из \(bytes(total))")
+            parts.append("\(traffic(usage.used)) из \(traffic(total))")
         } else {
-            parts.append("\(bytes(usage.used)) · без лимита")
+            parts.append("\(traffic(usage.used)) · без лимита")
         }
         if let days = usage.daysLeft() {
             parts.append(days == 0 ? "подписка закончилась" : "осталось " + plural(days, "день", "дня", "дней"))

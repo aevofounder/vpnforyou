@@ -4,6 +4,8 @@ name: VPNforYou
 
 options:
   bundleIdPrefix: io.github.aevofounder
+  # The interface is Russian: system formatters (bytes, dates) follow it.
+  developmentLanguage: ru
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
@@ -32,6 +34,8 @@ targets:
     info:
       path: App/Info.plist
       properties:
+        CFBundleDevelopmentRegion: ru
+        CFBundleLocalizations: [ru]
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
     settings:
