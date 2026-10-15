@@ -117,7 +117,7 @@ struct ActivityView: View {
                 Label(monitor.isPaused ? "Продолжить" : "Пауза",
                       systemImage: monitor.isPaused ? "play.fill" : "pause.fill")
             }
-            .glassButtonStyle()
+            .glassButtonStyle(capsule: true)
             .disabled(!connection.state.isConnected)
         }
         .padding(.horizontal, 16)
