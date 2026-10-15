@@ -1,0 +1,2 @@
+{{ range . }}  - {{ .RuleID }}{{ if .File }}: {{ .File }}{{ end }}, строка {{ .StartLine }}{{ if .Commit }}, коммит {{ printf "%.7s" .Commit }}{{ end }}
+{{ end }}
