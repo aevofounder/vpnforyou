@@ -59,3 +59,30 @@ description = "Приватный ключ WireGuard"
 regex = '''(?i)private_?key"?\s*[=:]\s*"?([A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=)'''
 secretGroup = 1
 keywords = ["private"]
+
+# UUID пользователя в YAML (конфиги и подписки mihomo/Clash),
+# в том числе в строчной записи `- {name: NL, uuid: ..., ...}`.
+[[rules]]
+id = "vpn-yaml-uuid"
+description = "UUID пользователя VPN в YAML-конфиге или подписке"
+regex = '''(?im)(?:^|[\s{,])['"]?uuid['"]?\s*:\s*['"]?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'''
+secretGroup = 1
+keywords = ["uuid"]
+
+[[rules.allowlists]]
+regexTarget = "secret"
+regexes = ['''^0{8}-0{4}-0{4}-0{4}-0{12}$''']
+
+# Пароли в YAML (hysteria2, trojan, shadowsocks...). Только *.yaml/*.yml,
+# чтобы не ловить Swift-код вида `password: String`.
+[[rules]]
+id = "vpn-yaml-password"
+description = "Пароль VPN/прокси в YAML-конфиге или подписке"
+regex = '''(?im)(?:^|[\s{,])['"]?(?:password|auth-str|psk|obfs-password)['"]?\s*:\s*['"]?([^'"\s,#}]{6,})'''
+secretGroup = 1
+keywords = ["password", "auth-str", "psk"]
+path = '''(?i)\.ya?ml$'''
+
+[[rules.allowlists]]
+regexTarget = "secret"
+regexes = ['''^(?:test|fake|example|placeholder|dummy)[-_a-z0-9]*$''']

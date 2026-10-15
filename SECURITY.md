@@ -29,7 +29,7 @@
 ## Автоматические проверки
 
 - **gitleaks** запускается на каждый push и pull request (`.github/workflows/secret-scan.yml`).
-  Кроме стандартных правил, в `.gitleaks.toml` описаны правила для ссылок-ключей VPN, UUID и паролей в конфигах и приватных ключей WireGuard.
+  Кроме стандартных правил, в `.gitleaks.toml` описаны правила для ссылок-ключей VPN, UUID и паролей в конфигах (JSON и YAML, включая подписки Clash/mihomo) и приватных ключей WireGuard.
   Если проверка красная, коммит нужно исправить **до** слияния.
 - **Настройки GitHub** (Settings → Advanced Security), которые должны быть включены:
   Secret scanning, Push protection, Dependabot alerts.

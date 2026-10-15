@@ -28,7 +28,10 @@ wg*.conf
 ._*
 
 # ===== Xcode / Swift =====
+# Проект генерируется XcodeGen из project.yml
+/VPNforYou.xcodeproj/
 build/
+dist/
 DerivedData/
 .build/
 .swiftpm/
