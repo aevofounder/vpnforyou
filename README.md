@@ -13,6 +13,22 @@ VPN-клиент для macOS, в котором видно, что происх
 > **Статус:** этапы 1–6 из 7 сделаны и ждут проверки на маке: импорт ключей и подписок, подключение через ядро mihomo, IP и скорость, выбор программ, ⌘K, горячая клавиша, автозапуск. Kill switch отложен. Релизы собираются по тегу `v*` (этап 7).
 > План и этапы: [docs/PLAN.md](docs/PLAN.md). Дизайн: [docs/DESIGN.md](docs/DESIGN.md).
 
+## Как выглядит
+
+<p>
+  <img src="docs/screenshots/01-home-connected.png" width="270" alt="Главный экран: VPN включён, IP сменился, график скорости">
+  <img src="docs/screenshots/09-home-dark.png" width="270" alt="Тёмная тема с фиолетовым акцентом">
+  <img src="docs/screenshots/05-apps.png" width="270" alt="Выбор программ ползунками">
+</p>
+<p>
+  <img src="docs/screenshots/03-servers.png" width="270" alt="Серверы с пингом и самым быстрым">
+  <img src="docs/screenshots/04-speed.png" width="270" alt="Тест скорости">
+  <img src="docs/screenshots/06-palette.png" width="270" alt="Быстрые действия ⌘K">
+</p>
+<img src="docs/screenshots/07-activity.png" width="560" alt="Окно «Активность»: какие программы идут через VPN">
+
+Снимки делает CI на macOS 26 из настоящего кода интерфейса, на ненастоящих данных (`workflow Screenshots`).
+
 ## Установка
 
 Нужен Mac с macOS 14 Sonoma или новее. Настоящий Liquid Glass виден на macOS 26 Tahoe, на 14–15 — матовое стекло.
