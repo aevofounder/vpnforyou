@@ -2,8 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(gitleaks *)",
-      "Bash(sing-box check *)",
-      "Bash(sing-box version)",
+      "Bash(mihomo -t *)",
+      "Bash(mihomo -v)",
       "Bash(swift build *)",
       "Bash(swift test *)"
     ]

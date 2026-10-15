@@ -28,14 +28,25 @@ grep_links() {
     | sed -E 's/^([A-Za-z0-9]+):.*/  - ссылка \1:\/\/…/'
 }
 
+# UUID рядом с ключом uuid в любом формате: JSON, YAML (подписки mihomo), key=value.
+grep_uuid() {
+  printf '%s' "$prompt" \
+    | grep -Eio "uuid[\"']?[[:space:]]*[:=][[:space:]]*[\"']?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}" \
+    | grep -Eiv '0{8}-0{4}-0{4}-0{4}-0{12}' \
+    | head -n 1 | sed 's/.*/  - uuid в конфиге/'
+}
+
 found=""
 status=1
 if command -v gitleaks >/dev/null 2>&1 && [ -f "$repo_root/.gitleaks.toml" ]; then
+  # Все собственные правила проекта (их id из .gitleaks.toml) и приватные ключи.
+  # Общие правила gitleaks не включаются: в обычном тексте они дают ложные срабатывания.
+  rules=(--enable-rule private-key)
+  while IFS= read -r id; do
+    rules+=(--enable-rule "$id")
+  done < <(sed -nE 's/^[[:space:]]*id[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$repo_root/.gitleaks.toml")
   printf '%s' "$prompt" | gitleaks stdin --no-banner --no-color --redact --log-level error \
-    --exit-code 3 --ignore-gitleaks-allow --config "$repo_root/.gitleaks.toml" \
-    --enable-rule vpn-share-link --enable-rule vpn-config-uuid \
-    --enable-rule vpn-config-password --enable-rule wireguard-private-key \
-    --enable-rule private-key \
+    --exit-code 3 --ignore-gitleaks-allow --config "$repo_root/.gitleaks.toml" "${rules[@]}" \
     --report-path "$tmp/report.txt" --report-format template \
     --report-template "$hook_dir/gitleaks-findings.tmpl" >/dev/null 2>&1
   status=$?
@@ -44,6 +55,11 @@ fi
 # gitleaks нет или он упал: не пропускаем молча, проверяем хотя бы ссылки.
 if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then
   found=$(grep_links)
+fi
+# UUID в YAML правила .gitleaks.toml не видят, поэтому проверяем его отдельно.
+if ! printf '%s' "$found" | grep -q 'uuid'; then
+  extra=$(grep_uuid)
+  [ -n "$extra" ] && found=$(printf '%s\n%s' "$found" "$extra" | sed '/^$/d')
 fi
 
 [ -n "$found" ] || exit 0
