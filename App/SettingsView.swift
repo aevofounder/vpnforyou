@@ -15,7 +15,7 @@ struct SettingsView: View {
     }
 }
 
-private struct GeneralSettingsView: View {
+struct GeneralSettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(ConnectionManager.self) private var connection
     @Environment(RoutingStore.self) private var routing
@@ -84,7 +84,7 @@ private struct GeneralSettingsView: View {
     }
 }
 
-private struct ConnectionSettingsView: View {
+struct ConnectionSettingsView: View {
     @Environment(ConnectionManager.self) private var connection
     @AppStorage(Diagnostics.serviceKey) private var ipService: IPService = .ipinfo
     @AppStorage(Diagnostics.checkOnConnectKey) private var checkOnConnect = true
@@ -144,7 +144,7 @@ private struct ConnectionSettingsView: View {
     }
 }
 
-private struct AppearanceSettingsView: View {
+struct AppearanceSettingsView: View {
     @AppStorage(AppearanceKey.theme) private var theme: AppTheme = .system
     @AppStorage(AppearanceKey.accent) private var accent: AccentColor = .blue
     @AppStorage(AppearanceKey.density) private var density: Density = .comfortable

@@ -1,6 +1,6 @@
 import Darwin
 
-/// Free TCP ports on 127.0.0.1 for the mihomo API and the local proxy.
+/// A free TCP port on 127.0.0.1 for the core's local proxy.
 enum PortPicker {
     static func freePort() -> Int? {
         let descriptor = socket(AF_INET, SOCK_STREAM, 0)
@@ -24,13 +24,5 @@ enum PortPicker {
         guard named == 0 else { return nil }
         let port = Int(UInt16(bigEndian: address.sin_port))
         return (1024...65535).contains(port) ? port : nil
-    }
-
-    /// Two different free ports, or nil.
-    static func pair() -> (Int, Int)? {
-        for _ in 0..<5 {
-            if let first = freePort(), let second = freePort(), first != second { return (first, second) }
-        }
-        return nil
     }
 }

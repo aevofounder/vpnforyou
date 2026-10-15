@@ -10,36 +10,28 @@ public enum RoutingMode: String, Codable, CaseIterable, Sendable {
     case allExceptSelected
 }
 
-/// Per-connection secrets for the local mihomo API and proxy port.
-/// Generated fresh on every connect, kept only in memory.
+/// Login for the core's local proxy port (127.0.0.1), used for the IP check
+/// and the speed test through the VPN. Generated fresh on every connect,
+/// kept only in memory. The core's API is not here on purpose: it listens
+/// only on a root-only Unix socket that the helper talks to.
 public struct CoreSession: Codable, Equatable, Sendable {
-    public var controllerPort: Int
-    public var controllerSecret: String
     public var mixedPort: Int
     public var mixedUser: String
     public var mixedPassword: String
 
-    public init(controllerPort: Int, controllerSecret: String, mixedPort: Int, mixedUser: String, mixedPassword: String) {
-        self.controllerPort = controllerPort
-        self.controllerSecret = controllerSecret
+    public init(mixedPort: Int, mixedUser: String, mixedPassword: String) {
         self.mixedPort = mixedPort
         self.mixedUser = mixedUser
         self.mixedPassword = mixedPassword
     }
 
-    /// Random secrets for the given ports.
-    public static func random(controllerPort: Int, mixedPort: Int) -> CoreSession {
+    /// Random login for the given port.
+    public static func random(mixedPort: Int) -> CoreSession {
         CoreSession(
-            controllerPort: controllerPort,
-            controllerSecret: RandomToken.hex(bytes: 24),
             mixedPort: mixedPort,
             mixedUser: "vfy" + RandomToken.hex(bytes: 4),
             mixedPassword: RandomToken.hex(bytes: 24)
         )
-    }
-
-    public var controllerURL: URL {
-        URL(string: "http://127.0.0.1:\(controllerPort)")!
     }
 }
 

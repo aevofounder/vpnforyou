@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import UniformTypeIdentifiers
 import VPNCore
 
 /// Installed programs for the apps screen, plus ones added by hand.
@@ -56,13 +57,24 @@ final class InstalledApps {
         return entry
     }
 
+    #if DEBUG
+    /// Screenshot fixtures (Debug builds only).
+    func previewSet(apps: [AppEntry]) {
+        self.apps = apps
+        loaded = true
+        isLoading = false
+    }
+    #endif
+
     func entry(for path: String) -> AppEntry? {
         apps.first { $0.path == path }
     }
 
     func icon(for path: String) -> NSImage {
         if let cached = icons[path] { return cached }
-        let icon = NSWorkspace.shared.icon(forFile: path)
+        let icon = FileManager.default.fileExists(atPath: path)
+            ? NSWorkspace.shared.icon(forFile: path)
+            : NSWorkspace.shared.icon(for: .applicationBundle)
         icon.size = NSSize(width: 32, height: 32)
         icons[path] = icon
         return icon

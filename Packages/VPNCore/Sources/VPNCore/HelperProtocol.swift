@@ -9,7 +9,7 @@ import Foundation
 public enum HelperProtocol {
     /// Bump when the request/response format or the helper's behaviour changes;
     /// the app then offers to reinstall the helper.
-    public static let version = "1"
+    public static let version = "2"
 
     public static let label = "io.github.aevofounder.vpnforyou.helper"
     public static let socketPath = "/var/run/io.github.aevofounder.vpnforyou.helper.sock"
@@ -18,6 +18,8 @@ public enum HelperProtocol {
     public static let supportDirectory = "/Library/Application Support/VPNforYou"
     public static let corePath = supportDirectory + "/mihomo"
     public static let runDirectory = supportDirectory + "/run"
+    /// The core's API: a Unix socket inside the root-only run folder, never a TCP port.
+    public static let apiSocketName = "api.sock"
     public static let logPath = "/Library/Logs/VPNforYou-helper.log"
 
     /// Names of the bundled executables inside VPNforYou.app/Contents/MacOS.
@@ -51,17 +53,29 @@ public struct AppsUpdate: Codable, Equatable, Sendable {
 
 public struct HelperRequest: Codable, Equatable, Sendable {
     public enum Command: String, Codable, Sendable {
-        case hello, start, stop, status, setApps, logs
+        /// Version and whether the core runs.
+        case hello, status
+        case start, stop, setApps, logs
+        /// Switch the main selector to `target` (a server or group of the running config).
+        case select
+        /// Latency through `target` (a server or group of the running config).
+        case delay
+        /// Live connections, for the Activity window.
+        case connections
+        /// Upload and download totals, for the traffic graph.
+        case traffic
     }
 
     public var command: Command
     public var start: CoreStartRequest?
     public var apps: AppsUpdate?
+    public var target: String?
 
-    public init(command: Command, start: CoreStartRequest? = nil, apps: AppsUpdate? = nil) {
+    public init(command: Command, start: CoreStartRequest? = nil, apps: AppsUpdate? = nil, target: String? = nil) {
         self.command = command
         self.start = start
         self.apps = apps
+        self.target = target
     }
 }
 
@@ -70,14 +84,25 @@ public struct HelperResponse: Codable, Equatable, Sendable {
     public var error: String?
     public var helperVersion: String?
     public var running: Bool?
+    /// The core answers on its API socket.
+    public var apiReady: Bool?
     public var logs: [String]?
+    public var delay: Int?
+    public var connections: ConnectionsSnapshot?
+    public var traffic: TrafficTotals?
 
-    public init(ok: Bool, error: String? = nil, helperVersion: String? = nil, running: Bool? = nil, logs: [String]? = nil) {
+    public init(ok: Bool, error: String? = nil, helperVersion: String? = nil, running: Bool? = nil,
+                apiReady: Bool? = nil, logs: [String]? = nil, delay: Int? = nil,
+                connections: ConnectionsSnapshot? = nil, traffic: TrafficTotals? = nil) {
         self.ok = ok
         self.error = error
         self.helperVersion = helperVersion
         self.running = running
+        self.apiReady = apiReady
         self.logs = logs
+        self.delay = delay
+        self.connections = connections
+        self.traffic = traffic
     }
 
     public static func failure(_ message: String) -> HelperResponse {

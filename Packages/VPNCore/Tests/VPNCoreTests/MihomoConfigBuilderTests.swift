@@ -23,10 +23,7 @@ final class MihomoConfigBuilderTests: XCTestCase {
     static func sampleRequest(routing: RoutingMode, selectGroup: Bool = false) throws -> CoreStartRequest {
         let servers = try sampleServers()
         let group = ServerGroup(name: "Автовыбор", memberIDs: [servers[0].id, servers[1].id])
-        let session = CoreSession(
-            controllerPort: 29_090, controllerSecret: String(repeating: "a1", count: 16),
-            mixedPort: 29_091, mixedUser: "vfytest", mixedPassword: String(repeating: "b2", count: 16)
-        )
+        let session = CoreSession(mixedPort: 29_091, mixedUser: "vfytest", mixedPassword: String(repeating: "b2", count: 16))
         return CoreStartRequest(
             servers: servers, groups: [group],
             selectedID: selectGroup ? group.id : servers[1].id,
@@ -98,14 +95,29 @@ final class MihomoConfigBuilderTests: XCTestCase {
     }
 
     func testConfigListensOnLoopbackOnly() throws {
-        let config = try MihomoConfigBuilder.config(for: try Self.sampleRequest(routing: .onlySelected), appsRulesPath: "/tmp/apps.yaml")
+        let config = try MihomoConfigBuilder.config(for: try Self.sampleRequest(routing: .onlySelected),
+                                                    appsRulesPath: "/tmp/apps.yaml", apiSocketPath: "/tmp/api.sock")
         XCTAssertEqual(config["bind-address"] as? String, "127.0.0.1")
         XCTAssertEqual(config["allow-lan"] as? Bool, false)
-        XCTAssertEqual(config["external-controller"] as? String, "127.0.0.1:29090")
         XCTAssertNotNil(config["rule-providers"])
-        let data = try MihomoConfigBuilder.configData(for: try Self.sampleRequest(routing: .all), appsRulesPath: "/tmp/apps.yaml")
+        let data = try MihomoConfigBuilder.configData(for: try Self.sampleRequest(routing: .all),
+                                                      appsRulesPath: "/tmp/apps.yaml", apiSocketPath: "/tmp/api.sock")
         XCTAssertNotNil(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("\\/"), "YAML rejects \\/")
+    }
+
+    /// The core's API must not be reachable over TCP: a process that could talk to it
+    /// could load any config into the root core (`PUT /configs`) or replace it (`/upgrade`).
+    func testAPIOnlyOnUnixSocket() throws {
+        for routing in RoutingMode.allCases {
+            let config = try MihomoConfigBuilder.config(for: try Self.sampleRequest(routing: routing),
+                                                        appsRulesPath: "/tmp/apps.yaml", apiSocketPath: "/tmp/api.sock")
+            XCTAssertEqual(config["external-controller-unix"] as? String, "/tmp/api.sock")
+            for key in ["external-controller", "external-controller-tls", "external-controller-pipe", "secret",
+                        "external-ui", "external-ui-url", "external-doh-server"] {
+                XCTAssertNil(config[key], key)
+            }
+        }
     }
 
     func testValidationRejectsBadInput() throws {
@@ -114,11 +126,11 @@ final class MihomoConfigBuilderTests: XCTestCase {
         XCTAssertThrowsError(try MihomoConfigBuilder.validate(request)) { XCTAssertEqual($0 as? CoreConfigError, .unknownSelection) }
 
         request = try Self.sampleRequest(routing: .all)
-        request.session.controllerPort = 80
+        request.session.mixedPort = 80
         XCTAssertThrowsError(try MihomoConfigBuilder.validate(request)) { XCTAssertEqual($0 as? CoreConfigError, .invalidPort(80)) }
 
         request = try Self.sampleRequest(routing: .all)
-        request.session.controllerSecret = "short"
+        request.session.mixedPassword = "short"
         XCTAssertThrowsError(try MihomoConfigBuilder.validate(request)) { XCTAssertEqual($0 as? CoreConfigError, .invalidSecret) }
 
         request = try Self.sampleRequest(routing: .onlySelected)
@@ -153,12 +165,12 @@ final class MihomoConfigBuilderTests: XCTestCase {
     }
 
     func testRandomSessionIsValid() throws {
-        let session = CoreSession.random(controllerPort: 30_000, mixedPort: 30_001)
+        let session = CoreSession.random(mixedPort: 30_001)
         var request = try Self.sampleRequest(routing: .all)
         request.session = session
         XCTAssertNoThrow(try MihomoConfigBuilder.validate(request))
-        XCTAssertEqual(session.controllerSecret.count, 48)
-        XCTAssertNotEqual(session.controllerSecret, CoreSession.random(controllerPort: 30_000, mixedPort: 30_001).controllerSecret)
+        XCTAssertEqual(session.mixedPassword.count, 48)
+        XCTAssertNotEqual(session.mixedPassword, CoreSession.random(mixedPort: 30_001).mixedPassword)
     }
 
     /// Writes sample configs for `mihomo -t` when MIHOMO_CHECK_DIR is set (CI and local checks).
@@ -172,7 +184,8 @@ final class MihomoConfigBuilderTests: XCTestCase {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let request = try Self.sampleRequest(routing: routing, selectGroup: group)
             let appsPath = folder.appendingPathComponent(MihomoConfigBuilder.appsFileName).path
-            try MihomoConfigBuilder.configData(for: request, appsRulesPath: appsPath)
+            try MihomoConfigBuilder.configData(for: request, appsRulesPath: appsPath,
+                                               apiSocketPath: folder.appendingPathComponent("api.sock").path)
                 .write(to: folder.appendingPathComponent("config.json"))
             try Data(MihomoConfigBuilder.appsRules(paths: request.appPaths).utf8)
                 .write(to: URL(fileURLWithPath: appsPath))

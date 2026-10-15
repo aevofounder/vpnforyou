@@ -17,8 +17,24 @@ public struct HelperHandler: Sendable {
     public func handle(_ request: HelperRequest) -> HelperResponse {
         do {
             switch request.command {
-            case .hello, .status:
+            case .hello:
                 break
+            case .status:
+                return HelperResponse(ok: true, helperVersion: HelperProtocol.version,
+                                      running: supervisor.isRunning, apiReady: supervisor.apiReady)
+            case .select:
+                guard let target = request.target else { return .failure("select: нет сервера") }
+                try supervisor.select(target)
+            case .delay:
+                guard let target = request.target else { return .failure("delay: нет сервера") }
+                return HelperResponse(ok: true, helperVersion: HelperProtocol.version, running: true,
+                                      delay: try supervisor.delay(target))
+            case .connections:
+                return HelperResponse(ok: true, helperVersion: HelperProtocol.version, running: true,
+                                      connections: try supervisor.connections())
+            case .traffic:
+                return HelperResponse(ok: true, helperVersion: HelperProtocol.version, running: true,
+                                      traffic: try supervisor.trafficTotals())
             case .start:
                 guard let start = request.start else { return .failure("start: нет параметров") }
                 try supervisor.start(start)
@@ -34,6 +50,10 @@ public struct HelperHandler: Sendable {
             return HelperResponse(ok: true, helperVersion: HelperProtocol.version, running: supervisor.isRunning)
         } catch let error as CoreConfigError {
             return .failure(error.message)
+        } catch let error as HelperError {
+            var response = HelperResponse.failure(error.message)
+            response.running = supervisor.isRunning
+            return response
         } catch {
             return .failure(String(describing: error))
         }
@@ -58,7 +78,8 @@ public final class HelperServer: @unchecked Sendable {
         listener = try UnixSocket.makeListener(path: socketPath, ownerUID: allowedUID)
     }
 
-    /// Accept loop; requests are handled one at a time. Blocks forever.
+    /// Accept loop; each client is served on its own queue item, so a slow
+    /// latency check does not hold up the others. Blocks forever.
     public func serve() {
         while true {
             let client = accept(listener, nil, nil)
@@ -67,8 +88,10 @@ public final class HelperServer: @unchecked Sendable {
                 usleep(100_000)
                 continue
             }
-            handleClient(client)
-            close(client)
+            DispatchQueue.global(qos: .userInitiated).async { [self] in
+                handleClient(client)
+                close(client)
+            }
         }
     }
 

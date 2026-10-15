@@ -53,15 +53,10 @@ public enum MihomoConfigBuilder {
         else { throw CoreConfigError.tooManyEntries }
 
         let session = request.session
-        for port in [session.controllerPort, session.mixedPort] where !(1024...65535).contains(port) {
-            throw CoreConfigError.invalidPort(port)
-        }
-        guard session.controllerPort != session.mixedPort else { throw CoreConfigError.invalidPort(session.mixedPort) }
-        for token in [session.controllerSecret, session.mixedPassword] {
-            guard (16...128).contains(token.count), token.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else {
-                throw CoreConfigError.invalidSecret
-            }
-        }
+        guard (1024...65535).contains(session.mixedPort) else { throw CoreConfigError.invalidPort(session.mixedPort) }
+        guard (16...128).contains(session.mixedPassword.count),
+              session.mixedPassword.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) })
+        else { throw CoreConfigError.invalidSecret }
         guard (3...64).contains(session.mixedUser.count),
               session.mixedUser.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) })
         else { throw CoreConfigError.invalidSecret }
@@ -97,8 +92,12 @@ public enum MihomoConfigBuilder {
     // MARK: - Config
 
     /// The whole config as a JSON-compatible dictionary.
-    /// - Parameter appsRulesPath: absolute path of the per-app rules file, written by the helper.
-    public static func config(for request: CoreStartRequest, appsRulesPath: String) throws -> [String: Any] {
+    /// - Parameters:
+    ///   - appsRulesPath: absolute path of the per-app rules file, written by the helper.
+    ///   - apiSocketPath: the core's API, a Unix socket in the helper's root-only folder.
+    ///     There is no TCP API: nothing but the helper can reach `/configs`, `/upgrade` and the rest.
+    public static func config(for request: CoreStartRequest, appsRulesPath: String,
+                              apiSocketPath: String) throws -> [String: Any] {
         try validate(request)
         let session = request.session
 
@@ -113,8 +112,7 @@ public enum MihomoConfigBuilder {
             "unified-delay": true,
             "tcp-concurrent": true,
             "find-process-mode": "always",
-            "external-controller": "127.0.0.1:\(session.controllerPort)",
-            "secret": session.controllerSecret,
+            "external-controller-unix": apiSocketPath,
             "geodata-mode": false,
             "geo-auto-update": false,
             "profile": ["store-selected": false, "store-fake-ip": false],
@@ -143,10 +141,11 @@ public enum MihomoConfigBuilder {
         return config
     }
 
-    public static func configData(for request: CoreStartRequest, appsRulesPath: String) throws -> Data {
+    public static func configData(for request: CoreStartRequest, appsRulesPath: String,
+                                  apiSocketPath: String) throws -> Data {
         // mihomo parses the file as YAML, which rejects the JSON escape "\/".
         try JSONSerialization.data(
-            withJSONObject: config(for: request, appsRulesPath: appsRulesPath),
+            withJSONObject: config(for: request, appsRulesPath: appsRulesPath, apiSocketPath: apiSocketPath),
             options: [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes]
         )
     }

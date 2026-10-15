@@ -4,7 +4,8 @@ import VPNCore
 import VPNHelperCore
 
 /// Connects and disconnects through the privileged helper and follows the
-/// running core through its local API (traffic, liveness, server switching).
+/// running core through it (traffic, liveness, server switching). The app
+/// never talks to the core's API itself: only the helper can reach it.
 @MainActor
 @Observable
 final class ConnectionManager {
@@ -39,12 +40,10 @@ final class ConnectionManager {
     private(set) var traffic: [TrafficSample] = []
     private(set) var lastError: String?
 
-    /// Secrets of the running core; only in memory.
+    /// Login of the running core's local proxy; only in memory.
     private(set) var session: CoreSession?
     @ObservationIgnored private var monitor: Task<Void, Never>?
     @ObservationIgnored private var lastRequest: CoreStartRequest?
-
-    var client: MihomoClient? { session.map(MihomoClient.init(session:)) }
 
     /// Server and group ids in the running core config.
     var runningIDs: Set<String> {
@@ -53,9 +52,20 @@ final class ConnectionManager {
     }
     var latestTraffic: TrafficSample? { traffic.last }
 
-    init() {
+    init(checkHelper: Bool = true) {
+        guard checkHelper else { return }
         Task { await refreshHelperState(stopStaleCore: true) }
     }
+
+    #if DEBUG
+    /// Screenshot fixtures (Debug builds only): a connected look without a core.
+    func previewSet(helper: HelperState, connectedID: String?, since: Date?, traffic: [TrafficSample]) {
+        helperState = helper
+        self.connectedID = connectedID
+        self.traffic = traffic
+        state = since.map { .connected(since: $0) } ?? .disconnected
+    }
+    #endif
 
     // MARK: - Helper
 
@@ -120,25 +130,24 @@ final class ConnectionManager {
             state = .failed(helperState == .outdated ? "Обновите помощника" : "Нужно установить помощника")
             return
         }
-        guard let ports = PortPicker.pair() else {
-            state = .failed("Нет свободных портов")
+        guard let port = PortPicker.freePort() else {
+            state = .failed("Нет свободного порта")
             return
         }
 
         state = .connecting
         AppLog.add("Подключение: режим \(routing.rawValue), серверов в конфиге \(servers.count), групп \(groups.count)")
         let started = Date()
-        let session = CoreSession.random(controllerPort: ports.0, mixedPort: ports.1)
+        let session = CoreSession.random(mixedPort: port)
         let request = CoreStartRequest(servers: servers, groups: groups, selectedID: selectedID,
                                        routing: routing, appPaths: appPaths, session: session)
         do {
             let response = try await Self.call(HelperRequest(command: .start, start: request))
             guard response.ok else { throw ConnectError.helper(response.error ?? "неизвестная ошибка") }
 
-            let client = MihomoClient(session: session)
             var alive = false
             for _ in 0..<40 {
-                if await client.isAlive() { alive = true; break }
+                if (try? await Self.call(HelperRequest(command: .status)))?.apiReady == true { alive = true; break }
                 try? await Task.sleep(for: .milliseconds(250))
             }
             guard alive else { throw ConnectError.helper("ядро не запустилось") }
@@ -149,7 +158,7 @@ final class ConnectionManager {
             traffic = []
             state = .connected(since: Date())
             AppLog.add(String(format: "Подключено за %.1f с", Date().timeIntervalSince(started)))
-            startMonitor(client)
+            startMonitor()
         } catch {
             _ = try? await Self.call(HelperRequest(command: .stop))
             self.session = nil
@@ -178,26 +187,36 @@ final class ConnectionManager {
                   routing: RoutingMode, appPaths: [String]) async {
         guard state.isConnected else { return }
         let known = Set((lastRequest?.servers.map(\.id) ?? []) + (lastRequest?.groups.map(\.id) ?? []))
-        if known.contains(selectedID), lastRequest?.routing == routing, let client {
-            do {
-                try await client.select(selectedID)
-                connectedID = selectedID
-                AppLog.add("Сервер переключён без переподключения")
-                return
-            } catch {
-                // Fall through to a reconnect.
-            }
+        if known.contains(selectedID), lastRequest?.routing == routing,
+           (try? await Self.call(HelperRequest(command: .select, target: selectedID)))?.ok == true {
+            connectedID = selectedID
+            AppLog.add("Сервер переключён без переподключения")
+            return
         }
         await disconnect()
         await connect(servers: servers, groups: groups, selectedID: selectedID, routing: routing, appPaths: appPaths)
     }
 
-    /// Updates the per-app rules on the fly.
+    /// Updates the per-app rules on the fly (the helper rewrites the file and reloads it).
     func updateApps(_ paths: [String]) async {
         guard state.isConnected else { return }
         _ = try? await Self.call(HelperRequest(command: .setApps, apps: AppsUpdate(paths: paths)))
         lastRequest?.appPaths = paths
-        await client?.reloadApps()
+    }
+
+    /// Latency through a server or group of the running config, in milliseconds.
+    func delay(_ id: String) async -> Int? {
+        guard state.isConnected else { return nil }
+        return (try? await Self.call(HelperRequest(command: .delay, target: id), timeout: 12))?.delay
+    }
+
+    /// Live connections for the Activity window.
+    func connections() async throws -> ConnectionsSnapshot {
+        let response = try await Self.call(HelperRequest(command: .connections))
+        guard response.ok, let snapshot = response.connections else {
+            throw ConnectError.helper(response.error ?? "нет данных")
+        }
+        return snapshot
     }
 
     func helperLogs() async -> [String] {
@@ -206,29 +225,32 @@ final class ConnectionManager {
 
     // MARK: - Monitor
 
-    private func startMonitor(_ client: MihomoClient) {
+    /// Once a second: traffic totals from the helper turn into a speed sample.
+    /// If the core stays unreachable for ~15 s (the helper restarts a crashed
+    /// one meanwhile), the connection is reported as failed.
+    private func startMonitor() {
         monitor?.cancel()
         monitor = Task { [weak self] in
             var failures = 0
+            var previous: (totals: TrafficTotals, date: Date)?
             while !Task.isCancelled {
-                do {
-                    for try await sample in client.traffic() {
-                        failures = 0
-                        guard let self else { return }
+                let response = try? await ConnectionManager.call(HelperRequest(command: .traffic), timeout: 5)
+                if Task.isCancelled { return }
+                guard let self else { return }
+                if let totals = response?.traffic {
+                    failures = 0
+                    let now = Date()
+                    if let previous {
+                        let sample = TrafficTotals.rate(from: previous.totals, to: totals,
+                                                        seconds: now.timeIntervalSince(previous.date))
                         self.traffic.append(sample)
                         if self.traffic.count > 60 { self.traffic.removeFirst(self.traffic.count - 60) }
                     }
-                } catch {
-                    // Stream dropped: check below whether the core is still there.
-                }
-                if Task.isCancelled { return }
-                if await client.isAlive() {
-                    failures = 0
+                    previous = (totals, now)
                 } else {
                     failures += 1
-                    // The helper restarts a crashed core; give it ~15 s before giving up.
-                    if failures >= 6 {
-                        guard let self else { return }
+                    previous = nil
+                    if failures >= 15 {
                         self.session = nil
                         self.connectedID = nil
                         self.state = .failed("Ядро VPN остановилось")
@@ -237,7 +259,7 @@ final class ConnectionManager {
                         return
                     }
                 }
-                try? await Task.sleep(for: .seconds(2.5))
+                try? await Task.sleep(for: .seconds(1))
             }
         }
     }
@@ -253,9 +275,9 @@ final class ConnectionManager {
         }
     }
 
-    nonisolated static func call(_ request: HelperRequest) async throws -> HelperResponse {
+    nonisolated static func call(_ request: HelperRequest, timeout: Int = 20) async throws -> HelperResponse {
         try await Task.detached(priority: .userInitiated) {
-            try HelperClient.send(request)
+            try HelperClient.send(request, timeoutSeconds: timeout)
         }.value
     }
 

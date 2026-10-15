@@ -13,8 +13,19 @@ final class ActivityMonitor {
     private(set) var error: String?
     @ObservationIgnored private var previous: ConnectionsSnapshot?
     @ObservationIgnored private var previousDate: Date?
+    @ObservationIgnored private var frozen = false
+
+    #if DEBUG
+    /// Screenshot fixtures (Debug builds only): fixed rows, no polling.
+    func previewSet(apps: [AppActivity], connections: Int) {
+        self.apps = apps
+        connectionCount = connections
+        frozen = true
+    }
+    #endif
 
     func run(connection: ConnectionManager) async {
+        guard !frozen else { return }
         previous = nil
         while !Task.isCancelled {
             if !isPaused { await poll(connection: connection) }
@@ -28,14 +39,14 @@ final class ActivityMonitor {
     }
 
     private func poll(connection: ConnectionManager) async {
-        guard connection.state.isConnected, let client = connection.client else {
+        guard connection.state.isConnected else {
             apps = []
             connectionCount = 0
             previous = nil
             return
         }
         do {
-            let snapshot = try await client.connections()
+            let snapshot = try await connection.connections()
             let now = Date()
             let interval = previousDate.map { now.timeIntervalSince($0) } ?? 1
             let rows = ConnectionRates.rows(previous: previous, current: snapshot, interval: interval)
@@ -55,7 +66,11 @@ struct ActivityView: View {
     @Environment(ConnectionManager.self) private var connection
     @Environment(RoutingStore.self) private var routing
     @Environment(InstalledApps.self) private var installed
-    @State private var monitor = ActivityMonitor()
+    @State private var monitor: ActivityMonitor
+
+    init(monitor: ActivityMonitor = ActivityMonitor()) {
+        _monitor = State(initialValue: monitor)
+    }
 
     var body: some View {
         VStack(spacing: 0) {

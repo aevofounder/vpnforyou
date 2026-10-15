@@ -34,7 +34,7 @@ final class HelperTests: XCTestCase {
         )
         return CoreStartRequest(
             servers: [server], groups: [], selectedID: server.id, routing: .onlySelected, appPaths: apps,
-            session: CoreSession.random(controllerPort: 29_190, mixedPort: 29_191)
+            session: CoreSession.random(mixedPort: 29_191)
         )
     }
 
@@ -100,7 +100,7 @@ final class HelperTests: XCTestCase {
         let run = directory.appendingPathComponent("run").path
         let supervisor = CoreSupervisor(corePath: try fakeCore("exec sleep 30"), runDirectory: run)
         var bad = try request()
-        bad.session.controllerSecret = "x"
+        bad.session.mixedPassword = "x"
         let response = HelperHandler(supervisor: supervisor).handle(HelperRequest(command: .start, start: bad))
         XCTAssertFalse(response.ok)
         XCTAssertEqual(response.error, CoreConfigError.invalidSecret.message)
@@ -149,5 +149,166 @@ final class HelperTests: XCTestCase {
         XCTAssertEqual(parsed?.allowedUID, 501)
         XCTAssertEqual(parsed?.socketPath, "/tmp/s")
         XCTAssertEqual(parsed?.corePath, HelperProtocol.corePath)
+    }
+
+    // MARK: - Core API through the helper
+
+    /// A tiny HTTP server on a Unix socket standing in for mihomo's API.
+    private final class FakeAPI: @unchecked Sendable {
+        private let lock = NSLock()
+        private var seen: [String] = []
+        let responses: [String: String]
+
+        init(path: String, responses: [String: String]) throws {
+            self.responses = responses
+            let listener = try UnixSocket.makeListener(path: path, ownerUID: nil)
+            Thread.detachNewThread { [self] in
+                while true {
+                    let client = accept(listener, nil, nil)
+                    if client < 0 { return }
+                    var data = Data()
+                    var buffer = [UInt8](repeating: 0, count: 4096)
+                    while data.range(of: Data("\r\n\r\n".utf8)) == nil {
+                        let count = read(client, &buffer, buffer.count)
+                        if count <= 0 { break }
+                        data.append(contentsOf: buffer[0..<count])
+                    }
+                    let line = String(decoding: data, as: UTF8.self).components(separatedBy: "\r\n").first ?? ""
+                    lock.lock()
+                    seen.append(line)
+                    lock.unlock()
+                    let key = line.split(separator: " ").prefix(2).joined(separator: " ")
+                    let reply = responses[key] ?? "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
+                    _ = reply.withCString { write(client, $0, strlen($0)) }
+                    close(client)
+                }
+            }
+        }
+
+        var requests: [String] {
+            lock.lock()
+            defer { lock.unlock() }
+            return seen
+        }
+    }
+
+    private static func json(_ body: String, status: String = "200 OK") -> String {
+        "HTTP/1.1 \(status)\r\nContent-Type: application/json\r\nContent-Length: \(body.utf8.count)\r\n\r\n\(body)"
+    }
+
+    private static func chunked(_ body: String) -> String {
+        let half = body.index(body.startIndex, offsetBy: body.count / 2)
+        let parts = [String(body[..<half]), String(body[half...])]
+        let chunks = parts.map { String($0.utf8.count, radix: 16) + "\r\n" + $0 + "\r\n" }.joined()
+        return "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n" + chunks + "0\r\n\r\n"
+    }
+
+    func testHTTPClientReadsLengthChunkedAndEmptyBodies() throws {
+        let path = directory.appendingPathComponent("api.sock").path
+        _ = try FakeAPI(path: path, responses: [
+            "GET /version": Self.json(#"{"version":"test"}"#),
+            "GET /connections": Self.chunked(#"{"downloadTotal":7,"uploadTotal":3,"connections":null}"#),
+            "PUT /proxies/PROXY": "HTTP/1.1 204 No Content\r\n\r\n",
+        ])
+        let version = try UnixHTTPClient.send(.version, socketPath: path)
+        XCTAssertEqual(version.status, 200)
+        XCTAssertEqual(String(decoding: version.body, as: UTF8.self), #"{"version":"test"}"#)
+
+        let connections = try UnixHTTPClient.send(.connections, socketPath: path)
+        XCTAssertEqual(try ConnectionsSnapshot.parse(connections.body).downloadTotal, 7)
+
+        XCTAssertEqual(try UnixHTTPClient.send(.select("s-1"), socketPath: path).status, 204)
+        XCTAssertEqual(try UnixHTTPClient.send(MihomoRequest(path: "/nope"), socketPath: path).status, 404)
+    }
+
+    func testHTTPParserRejectsGarbage() {
+        XCTAssertThrowsError(try UnixHTTPClient.parse(Data("hello".utf8), atEOF: true))
+        XCTAssertThrowsError(try UnixHTTPClient.parse(Data("HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nshort".utf8), atEOF: true))
+        XCTAssertNil(try UnixHTTPClient.parse(Data("HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nshort".utf8)))
+    }
+
+    func testAPICommandsOnlyReachKnownServers() throws {
+        let run = directory.appendingPathComponent("run").path
+        let supervisor = CoreSupervisor(corePath: try fakeCore("exec sleep 30"), runDirectory: run)
+        let handler = HelperHandler(supervisor: supervisor)
+        let start = try request()
+        let id = start.selectedID
+
+        // Nothing runs yet.
+        XCTAssertEqual(handler.handle(HelperRequest(command: .select, target: id)).error, HelperError.notRunning.message)
+
+        XCTAssertTrue(handler.handle(HelperRequest(command: .start, start: start)).ok)
+        let api = try FakeAPI(path: supervisor.apiSocketPath, responses: [
+            "GET /version": Self.json(#"{"version":"test"}"#),
+            "PUT /proxies/PROXY": "HTTP/1.1 204 No Content\r\n\r\n",
+            "GET /proxies/\(id)/delay?url=https%3A%2F%2Fwww.gstatic.com%2Fgenerate_204&timeout=5000": Self.json(#"{"delay":42}"#),
+            "GET /connections": Self.json(#"{"downloadTotal":2048,"uploadTotal":512,"connections":[{"id":"c1","metadata":{"host":"www.example.com","processPath":"/Applications/Chat.app/Contents/MacOS/Chat"},"upload":1,"download":2,"chains":["PROXY"]}]}"#),
+            "PUT /providers/rules/apps": "HTTP/1.1 204 No Content\r\n\r\n",
+        ])
+
+        let status = handler.handle(HelperRequest(command: .status))
+        XCTAssertEqual(status.running, true)
+        XCTAssertEqual(status.apiReady, true)
+
+        XCTAssertTrue(handler.handle(HelperRequest(command: .select, target: id)).ok)
+        XCTAssertEqual(handler.handle(HelperRequest(command: .delay, target: id)).delay, 42)
+        XCTAssertEqual(handler.handle(HelperRequest(command: .traffic)).traffic, TrafficTotals(upload: 512, download: 2048))
+        XCTAssertEqual(handler.handle(HelperRequest(command: .connections)).connections?.connections.first?.appName, "Chat")
+
+        // Anything outside the running config is refused before it reaches the core.
+        for target in ["s-unknown", "../configs", "PROXY", "DIRECT", ""] {
+            let refused = handler.handle(HelperRequest(command: .select, target: target))
+            XCTAssertFalse(refused.ok, target)
+            XCTAssertEqual(refused.error, HelperError.unknownTarget.message)
+            XCTAssertFalse(handler.handle(HelperRequest(command: .delay, target: target)).ok, target)
+        }
+        XCTAssertFalse(handler.handle(HelperRequest(command: .select)).ok)
+
+        XCTAssertTrue(handler.handle(HelperRequest(command: .setApps, apps: AppsUpdate(paths: ["/Applications/Chat.app"]))).ok)
+        XCTAssertTrue(waitFor { api.requests.contains("PUT /providers/rules/apps HTTP/1.1") })
+
+        // The helper only ever sends these requests to the core.
+        let allowed = ["GET /version ", "PUT /proxies/PROXY ", "GET /proxies/\(id)/delay?", "GET /connections ", "PUT /providers/rules/apps "]
+        for line in api.requests {
+            XCTAssertTrue(allowed.contains { line.hasPrefix($0) }, line)
+        }
+        supervisor.stop()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: supervisor.apiSocketPath))
+    }
+
+    /// Talks to a real mihomo over its Unix-socket API when MIHOMO_BIN is set.
+    /// TUN is switched off here so the test never touches the machine's routes.
+    func testRealMihomoAPIOverUnixSocket() throws {
+        guard let binary = ProcessInfo.processInfo.environment["MIHOMO_BIN"] else {
+            throw XCTSkip("MIHOMO_BIN is not set")
+        }
+        let folder = directory.appendingPathComponent("real")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let socket = folder.appendingPathComponent("api.sock").path
+        let apps = folder.appendingPathComponent(MihomoConfigBuilder.appsFileName).path
+        let start = try request()
+        var config = try MihomoConfigBuilder.config(for: start, appsRulesPath: apps, apiSocketPath: socket)
+        config["tun"] = ["enable": false]
+        config["dns"] = ["enable": false]
+        let configPath = folder.appendingPathComponent("config.json").path
+        try JSONSerialization.data(withJSONObject: config, options: [.withoutEscapingSlashes]).write(to: URL(fileURLWithPath: configPath))
+        try Data(MihomoConfigBuilder.appsRules(paths: start.appPaths).utf8).write(to: URL(fileURLWithPath: apps))
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: binary)
+        process.arguments = ["-d", folder.path, "-f", configPath]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        defer { process.terminate(); process.waitUntilExit() }
+
+        XCTAssertTrue(waitFor({ (try? UnixHTTPClient.send(.version, socketPath: socket))?.status == 200 }, timeout: 10))
+        XCTAssertEqual(try UnixHTTPClient.send(.select(start.selectedID), socketPath: socket).status, 204)
+        XCTAssertEqual(try UnixHTTPClient.send(.reloadApps, socketPath: socket).status, 204)
+        let snapshot = try ConnectionsSnapshot.parse(try UnixHTTPClient.send(.connections, socketPath: socket).body)
+        XCTAssertEqual(snapshot.connections, [])
+        // The fake server does not exist: an error answer, not a hang.
+        let delay = try UnixHTTPClient.send(.delay(start.selectedID, timeoutMilliseconds: 1_000), socketPath: socket, timeoutSeconds: 5)
+        XCTAssertNotEqual(delay.status, 200)
     }
 }

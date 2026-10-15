@@ -3,23 +3,36 @@ import XCTest
 @testable import VPNCore
 
 final class MihomoAPITests: XCTestCase {
-    private let session = CoreSession(controllerPort: 29_090, controllerSecret: String(repeating: "c", count: 32),
-                                      mixedPort: 29_091, mixedUser: "vfytest", mixedPassword: String(repeating: "d", count: 32))
-
     func testRequests() throws {
-        let api = MihomoAPI(session: session)
-        XCTAssertEqual(api.version.url?.absoluteString, "http://127.0.0.1:29090/version")
-        XCTAssertEqual(api.version.value(forHTTPHeaderField: "Authorization"), "Bearer " + String(repeating: "c", count: 32))
+        XCTAssertEqual(MihomoRequest.version, MihomoRequest(method: "GET", path: "/version"))
 
-        let select = api.select("s-0011")
-        XCTAssertEqual(select.httpMethod, "PUT")
-        XCTAssertEqual(select.url?.path, "/proxies/PROXY")
-        XCTAssertEqual(try JSONSerialization.jsonObject(with: select.httpBody ?? Data()) as? [String: String], ["name": "s-0011"])
+        let select = MihomoRequest.select("s-0011")
+        XCTAssertEqual(select.method, "PUT")
+        XCTAssertEqual(select.path, "/proxies/PROXY")
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: select.body ?? Data()) as? [String: String], ["name": "s-0011"])
 
-        let delay = api.delay("g-ab")
-        XCTAssertEqual(delay.url?.path, "/proxies/g-ab/delay")
-        XCTAssertTrue(delay.url?.query?.contains("timeout=5000") == true)
-        XCTAssertEqual(api.reloadApps.url?.path, "/providers/rules/apps")
+        let delay = MihomoRequest.delay("g-ab")
+        XCTAssertEqual(delay.path, "/proxies/g-ab/delay?url=https%3A%2F%2Fwww.gstatic.com%2Fgenerate_204&timeout=5000")
+        XCTAssertEqual(MihomoRequest.delay("a b/../c").path.components(separatedBy: "?").first, "/proxies/a%20b%2F..%2Fc/delay")
+        XCTAssertEqual(MihomoRequest.reloadApps, MihomoRequest(method: "PUT", path: "/providers/rules/apps"))
+    }
+
+    func testTrafficRateFromTotals() {
+        let rate = TrafficTotals.rate(from: TrafficTotals(upload: 1_000, download: 10_000),
+                                      to: TrafficTotals(upload: 3_000, download: 50_000), seconds: 2)
+        XCTAssertEqual(rate, TrafficSample(up: 1_000, down: 20_000))
+        // A restarted core starts counting from zero again: no negative speed.
+        XCTAssertEqual(TrafficTotals.rate(from: TrafficTotals(upload: 9, download: 9),
+                                          to: TrafficTotals(upload: 0, download: 0), seconds: 1), TrafficSample(up: 0, down: 0))
+    }
+
+    func testSnapshotRoundTripKeepsOnlyKnownFields() throws {
+        let raw = #"{"downloadTotal":5,"uploadTotal":6,"connections":[{"id":"a","metadata":{"host":"api.example.com","sourceIP":"192.0.2.1","processPath":"/Applications/Chat.app/Contents/MacOS/Chat"},"upload":1,"download":2,"chains":["PROXY"],"extra":"x"}]}"#
+        let snapshot = try ConnectionsSnapshot.parse(Data(raw.utf8))
+        let encoded = String(decoding: try JSONEncoder().encode(snapshot), as: UTF8.self)
+        XCTAssertFalse(encoded.contains("sourceIP"))
+        XCTAssertFalse(encoded.contains("extra"))
+        XCTAssertEqual(try JSONDecoder().decode(ConnectionsSnapshot.self, from: Data(encoded.utf8)), snapshot)
     }
 
     func testTrafficLine() {

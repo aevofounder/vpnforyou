@@ -1,61 +1,58 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
-/// Requests and responses of the mihomo REST API (external-controller).
-/// The HTTP itself lives in the app; this part is testable on Linux.
-public struct MihomoAPI: Sendable {
-    public let session: CoreSession
+/// One call to the mihomo REST API. Only the helper sends these, over the
+/// core's root-only Unix socket; the list below is everything it ever asks.
+public struct MihomoRequest: Equatable, Sendable {
+    public var method: String
+    public var path: String
+    public var body: Data?
 
-    public init(session: CoreSession) {
-        self.session = session
+    public init(method: String = "GET", path: String, body: Data? = nil) {
+        self.method = method
+        self.path = path
+        self.body = body
     }
 
-    public func request(_ path: String, method: String = "GET", query: [URLQueryItem] = [], body: Data? = nil) -> URLRequest {
-        var components = URLComponents(url: session.controllerURL, resolvingAgainstBaseURL: false)!
-        components.percentEncodedPath = path
-        if !query.isEmpty { components.queryItems = query }
-        var request = URLRequest(url: components.url!, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
-        request.httpMethod = method
-        request.setValue("Bearer \(session.controllerSecret)", forHTTPHeaderField: "Authorization")
-        if let body {
-            request.httpBody = body
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        }
-        return request
-    }
-
-    public var version: URLRequest { request("/version") }
-    public var traffic: URLRequest { request("/traffic") }
-    public var connections: URLRequest { request("/connections") }
+    public static let version = MihomoRequest(path: "/version")
+    public static let connections = MihomoRequest(path: "/connections")
 
     /// Picks the server or group in the main selector without reconnecting.
-    public func select(_ name: String) -> URLRequest {
+    public static func select(_ name: String) -> MihomoRequest {
         let body = try? JSONSerialization.data(withJSONObject: ["name": name])
-        return request("/proxies/\(MihomoConfigBuilder.proxyGroup)", method: "PUT", body: body)
+        return MihomoRequest(method: "PUT", path: "/proxies/\(MihomoConfigBuilder.proxyGroup)", body: body)
     }
 
     /// Latency through one proxy (server id or group id).
-    public func delay(_ name: String, timeoutMilliseconds: Int = 5_000) -> URLRequest {
-        var request = request(
-            "/proxies/\(Self.pathComponent(name))/delay",
-            query: [
-                URLQueryItem(name: "url", value: MihomoConfigBuilder.testURL),
-                URLQueryItem(name: "timeout", value: String(timeoutMilliseconds)),
-            ]
-        )
-        request.timeoutInterval = Double(timeoutMilliseconds) / 1_000 + 2
-        return request
+    public static func delay(_ name: String, timeoutMilliseconds: Int = 5_000) -> MihomoRequest {
+        let url = pathComponent(MihomoConfigBuilder.testURL)
+        return MihomoRequest(path: "/proxies/\(pathComponent(name))/delay?url=\(url)&timeout=\(timeoutMilliseconds)")
     }
 
     /// Re-reads the per-app rules file right away.
-    public var reloadApps: URLRequest {
-        request("/providers/rules/\(MihomoConfigBuilder.appsProvider)", method: "PUT")
+    public static let reloadApps = MihomoRequest(method: "PUT", path: "/providers/rules/\(MihomoConfigBuilder.appsProvider)")
+
+    static func pathComponent(_ text: String) -> String {
+        text.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-_.~"))) ?? text
+    }
+}
+
+/// Upload and download totals of the running core, from `/connections`.
+public struct TrafficTotals: Codable, Equatable, Sendable {
+    public var upload: Int64
+    public var download: Int64
+
+    public init(upload: Int64, download: Int64) {
+        self.upload = upload
+        self.download = download
     }
 
-    static func pathComponent(_ name: String) -> String {
-        name.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-_.~"))) ?? name
+    /// Bytes per second between two readings.
+    public static func rate(from previous: TrafficTotals, to current: TrafficTotals, seconds: TimeInterval) -> TrafficSample {
+        let interval = max(seconds, 0.1)
+        return TrafficSample(
+            up: Int64(Double(max(0, current.upload - previous.upload)) / interval),
+            down: Int64(Double(max(0, current.download - previous.download)) / interval)
+        )
     }
 }
 
@@ -84,7 +81,7 @@ public struct DelayResult: Codable, Equatable, Sendable {
 }
 
 /// `/connections` snapshot.
-public struct ConnectionsSnapshot: Decodable, Equatable, Sendable {
+public struct ConnectionsSnapshot: Codable, Equatable, Sendable {
     public var downloadTotal: Int64
     public var uploadTotal: Int64
     public var connections: [Connection]
@@ -107,7 +104,7 @@ public struct ConnectionsSnapshot: Decodable, Equatable, Sendable {
         self.connections = connections
     }
 
-    public struct Connection: Decodable, Equatable, Sendable, Identifiable {
+    public struct Connection: Codable, Equatable, Sendable, Identifiable {
         public var id: String
         public var metadata: Metadata
         public var upload: Int64
@@ -151,7 +148,7 @@ public struct ConnectionsSnapshot: Decodable, Equatable, Sendable {
         }
     }
 
-    public struct Metadata: Decodable, Equatable, Sendable {
+    public struct Metadata: Codable, Equatable, Sendable {
         public var network: String?
         public var host: String?
         public var sniffHost: String?

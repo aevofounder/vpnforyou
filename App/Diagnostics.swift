@@ -59,6 +59,18 @@ final class Diagnostics {
         IPLookup.changed(direct: directIP.info, vpn: vpnIP.info)
     }
 
+    #if DEBUG
+    /// Screenshot fixtures (Debug builds only).
+    func previewSet(directIP: Lookup, vpnIP: Lookup, pings: [String: Int], speedRun: SpeedRun?,
+                    history: [SpeedResult]) {
+        self.directIP = directIP
+        self.vpnIP = vpnIP
+        self.pings = pings
+        self.speedRun = speedRun
+        speedHistory = history
+    }
+    #endif
+
     // MARK: - IP
 
     /// Looks up the IP without VPN and, when connected, through it.
@@ -120,13 +132,13 @@ final class Diagnostics {
     func pingAll(_ servers: [ServerConfig], groups: [ServerGroup], connection: ConnectionManager) {
         pingTask?.cancel()
         isPinging = true
-        let client = connection.state.isConnected ? connection.client : nil
+        let connected = connection.state.isConnected
         let running = connection.runningIDs
         var targets: [(id: String, host: String, port: Int, tcp: Bool)] = servers.map {
             ($0.id, $0.host, $0.port, $0.proxyProtocol == .vless)
-        } + (client == nil ? [] : groups.map { ($0.id, "", 0, false) })
+        } + (connected ? groups.map { ($0.id, "", 0, false) } : [])
         // While connected only servers of the running config can be measured.
-        if client != nil { targets = targets.filter { running.contains($0.id) } }
+        if connected { targets = targets.filter { running.contains($0.id) } }
         var seen = Set<String>()
         targets = targets.filter { seen.insert($0.id).inserted }
 
@@ -136,8 +148,8 @@ final class Diagnostics {
                 func addNext() -> Bool {
                     guard let target = iterator.next() else { return false }
                     group.addTask {
-                        if let client {
-                            return (target.id, await client.delay(target.id))
+                        if connected {
+                            return (target.id, await connection.delay(target.id))
                         }
                         guard target.tcp else { return (target.id, nil) }
                         return (target.id, await NetworkProbe.tcpPing(host: target.host, port: target.port))

@@ -72,7 +72,11 @@ jobs:
           APP="build/DerivedData/Build/Products/Release/VPNforYou.app"
           codesign --verify --deep --strict --verbose=2 "$APP"
           lipo -info "$APP/Contents/MacOS/VPNforYou"
-          plutil -extract NSAppTransportSecurity.NSAllowsLocalNetworking raw "$APP/Contents/Info.plist" | grep -qx true
+          # The app never talks plain http (the core's API is reachable only through the helper).
+          if plutil -extract NSAppTransportSecurity xml1 -o /dev/null "$APP/Contents/Info.plist" 2>/dev/null; then
+            echo "Info.plist must not carry an ATS exception" >&2
+            exit 1
+          fi
           plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist"
           mkdir -p dist
           ditto -c -k --keepParent "$APP" dist/VPNforYou.zip

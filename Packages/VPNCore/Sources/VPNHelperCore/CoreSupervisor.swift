@@ -6,6 +6,20 @@ import Darwin
 import Glibc
 #endif
 
+public enum HelperError: Error, Equatable {
+    case notRunning
+    case unknownTarget
+    case coreRefused(Int)
+
+    public var message: String {
+        switch self {
+        case .notRunning: "ядро не запущено"
+        case .unknownTarget: "такого сервера нет в текущем подключении"
+        case .coreRefused(let status): "ядро ответило \(status)"
+        }
+    }
+}
+
 /// Runs mihomo for the helper: writes the config and the per-app rules into a
 /// root-only folder, starts the core, restarts it if it crashes, stops it.
 public final class CoreSupervisor: @unchecked Sendable {
@@ -27,6 +41,7 @@ public final class CoreSupervisor: @unchecked Sendable {
     }
 
     public var configPath: String { runDirectory + "/config.json" }
+    public var apiSocketPath: String { runDirectory + "/" + HelperProtocol.apiSocketName }
     public var appsPath: String { runDirectory + "/" + MihomoConfigBuilder.appsFileName }
     public var logPath: String { runDirectory + "/core.log" }
 
@@ -40,13 +55,14 @@ public final class CoreSupervisor: @unchecked Sendable {
 
     public func start(_ request: CoreStartRequest) throws {
         try MihomoConfigBuilder.validate(request)
-        let config = try MihomoConfigBuilder.configData(for: request, appsRulesPath: appsPath)
+        let config = try MihomoConfigBuilder.configData(for: request, appsRulesPath: appsPath, apiSocketPath: apiSocketPath)
         let apps = Data(MihomoConfigBuilder.appsRules(paths: request.appPaths).utf8)
 
         lock.lock()
         defer { lock.unlock() }
         terminateLocked()
         try prepareDirectory()
+        try? FileManager.default.removeItem(atPath: apiSocketPath)
         try writeSecure(apps, to: appsPath)
         try writeSecure(config, to: configPath)
         self.request = request
@@ -62,17 +78,82 @@ public final class CoreSupervisor: @unchecked Sendable {
         terminateLocked()
         request = nil
         try? FileManager.default.removeItem(atPath: configPath)
+        try? FileManager.default.removeItem(atPath: apiSocketPath)
     }
 
-    /// Rewrites the per-app rules; mihomo reloads the file by itself.
+    /// Rewrites the per-app rules and asks the core to re-read them at once.
     public func setApps(_ paths: [String]) throws {
         lock.lock()
-        defer { lock.unlock() }
-        guard var current = request else { return }
+        guard var current = request else {
+            lock.unlock()
+            return
+        }
         current.appPaths = paths
-        try MihomoConfigBuilder.validate(current)
-        try writeSecure(Data(MihomoConfigBuilder.appsRules(paths: paths).utf8), to: appsPath)
+        do {
+            try MihomoConfigBuilder.validate(current)
+            try writeSecure(Data(MihomoConfigBuilder.appsRules(paths: paths).utf8), to: appsPath)
+        } catch {
+            lock.unlock()
+            throw error
+        }
         request = current
+        let reload = current.routing != .all
+        lock.unlock()
+        if reload { _ = try? api(.reloadApps) }
+    }
+
+    // MARK: - Core API (only fixed, checked calls)
+
+    /// Server and group ids of the running config.
+    public var runningIDs: Set<String> {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let request else { return [] }
+        return Set(request.servers.map(\.id) + request.groups.map(\.id))
+    }
+
+    /// The core answers on its API socket.
+    public var apiReady: Bool {
+        guard isRunning, let response = try? api(.version, timeout: 2) else { return false }
+        return response.status == 200
+    }
+
+    public func select(_ id: String) throws {
+        guard isRunning else { throw HelperError.notRunning }
+        guard runningIDs.contains(id) else { throw HelperError.unknownTarget }
+        let response = try api(.select(id))
+        guard response.status == 204 else { throw HelperError.coreRefused(response.status) }
+    }
+
+    /// Latency in milliseconds through a server or group; nil on timeout.
+    public func delay(_ id: String) throws -> Int? {
+        guard isRunning else { throw HelperError.notRunning }
+        guard runningIDs.contains(id) else { throw HelperError.unknownTarget }
+        let response = try api(.delay(id), timeout: 8)
+        guard response.status == 200 else { return nil }
+        return (try? JSONDecoder().decode(DelayResult.self, from: response.body))?.delay
+    }
+
+    /// Live connections, at most `limit` of them (busiest last are dropped).
+    public func connections(limit: Int = 1_000) throws -> ConnectionsSnapshot {
+        let response = try api(.connections)
+        guard response.status == 200 else { throw HelperError.coreRefused(response.status) }
+        var snapshot = try ConnectionsSnapshot.parse(response.body)
+        if snapshot.connections.count > limit { snapshot.connections = Array(snapshot.connections.prefix(limit)) }
+        return snapshot
+    }
+
+    public func trafficTotals() throws -> TrafficTotals {
+        let snapshot = try connections(limit: 0)
+        return TrafficTotals(upload: snapshot.uploadTotal, download: snapshot.downloadTotal)
+    }
+
+    func api(_ request: MihomoRequest, timeout: Int = 10) throws -> UnixHTTPClient.Response {
+        guard isRunning else { throw HelperError.notRunning }
+        // mihomo makes its socket 0666; the 0700 root folder already keeps others
+        // out, and 0600 on the socket itself is a second lock.
+        chmod(apiSocketPath, 0o600)
+        return try UnixHTTPClient.send(request, socketPath: apiSocketPath, timeoutSeconds: timeout)
     }
 
     /// Last lines of the core log with secrets masked.

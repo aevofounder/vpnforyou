@@ -12,9 +12,13 @@ struct CommandPaletteView: View {
     @Environment(InstalledApps.self) private var installed
     @Environment(\.openSettings) private var openSettings
     @AppStorage(AppearanceKey.accent) private var accent: AccentColor = .blue
-    @State private var query = ""
+    @State private var query: String
     @State private var selection = 0
     @FocusState private var focused: Bool
+
+    init(query: String = "") {
+        _query = State(initialValue: query)
+    }
 
     struct Command: Identifiable {
         let id: String

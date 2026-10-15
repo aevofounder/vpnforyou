@@ -34,10 +34,6 @@ targets:
       properties:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        # Lets the app call the mihomo API on 127.0.0.1 over plain http.
-        # Internet loads still need https.
-        NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
     settings:
       base:
         PRODUCT_NAME: VPNforYou
