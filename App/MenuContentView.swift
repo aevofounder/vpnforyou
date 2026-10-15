@@ -2,17 +2,31 @@ import AppKit
 import SwiftUI
 
 /// The window that opens from the menu bar icon (see docs/DESIGN.md).
-/// For now it is a skeleton: connecting and servers arrive in later stages.
+/// Simple in-window navigation: home, servers, add keys.
 struct MenuContentView: View {
+    @Environment(AppModel.self) private var model
     @Environment(\.openSettings) private var openSettings
     @AppStorage(AppearanceKey.density) private var density: Density = .comfortable
 
     var body: some View {
         VStack(spacing: density.gap) {
-            header
-            StatusCard()
-            ServersCard()
-            footer
+            switch model.route {
+            case .home:
+                header
+                if let error = model.storageError {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.warn)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                StatusCard()
+                CurrentServerCard()
+                footer
+            case .servers:
+                ServersView()
+            case .add:
+                AddKeysView()
+            }
         }
         .padding(12)
         .frame(width: 360)
@@ -84,15 +98,78 @@ private struct StatusCard: View {
     }
 }
 
-private struct ServersCard: View {
+/// The selected server, or an invitation to add keys.
+private struct CurrentServerCard: View {
+    @Environment(AppModel.self) private var model
+
     var body: some View {
         Card {
-            VStack(alignment: .leading, spacing: 6) {
-                SectionLabel("СЕРВЕРЫ")
-                Text("Пока пусто")
-                    .font(.system(size: 13, weight: .medium))
-                Text("Импорт ключей и подписок появится в следующей версии.")
-                    .foregroundStyle(Palette.ink2)
+            if let current = model.currentSelection {
+                VStack(alignment: .leading, spacing: 8) {
+                    Button {
+                        model.route = .servers
+                    } label: {
+                        HStack(spacing: 10) {
+                            if current.isGroup {
+                                Image(systemName: "bolt.fill")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 28, height: 20)
+                                    .background(.tint, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            } else {
+                                CountryChip(code: current.code)
+                            }
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(current.title)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .lineLimit(1)
+                                Text(current.subtitle)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Palette.ink3)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Palette.ink3)
+                        }
+                        .frame(minHeight: 40)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Открыть список серверов")
+
+                    if let usage = current.usage {
+                        Divider()
+                        UsageView(usage: usage)
+                    }
+                }
+            } else if model.hasServers {
+                Button {
+                    model.route = .servers
+                } label: {
+                    HStack {
+                        Text("Выберите сервер")
+                            .font(.system(size: 13, weight: .medium))
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(Palette.ink3)
+                    }
+                    .frame(minHeight: 40)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionLabel("СЕРВЕРЫ")
+                    Text("Пока пусто")
+                        .font(.system(size: 13, weight: .medium))
+                    Text("Вставьте ссылку на подписку от продавца VPN или ключи vless:// и hysteria2://.")
+                        .foregroundStyle(Palette.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Добавить ключ или подписку") { model.route = .add }
+                        .buttonStyle(.borderedProminent)
+                }
             }
         }
     }
