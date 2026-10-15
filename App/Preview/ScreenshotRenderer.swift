@@ -76,6 +76,7 @@ enum ScreenshotRenderer {
         }
         await shot("11-first-run", folder, light) { stores in
             let empty = Stores(profiles: [])
+            empty.routing.setMode(.all)
             empty.connection.previewSet(helper: .notInstalled, connectedID: nil, since: nil, traffic: [])
             return menu(empty, route: .home)
         }
@@ -127,11 +128,22 @@ enum ScreenshotRenderer {
         fit()
         try? await Task.sleep(for: .milliseconds(400))
 
-        let bounds = hosting.bounds
-        if let rep = hosting.bitmapImageRepForCachingDisplay(in: bounds) {
-            hosting.cacheDisplay(in: bounds, to: rep)
-            if let png = rep.representation(using: .png, properties: [:]) {
-                try? png.write(to: folder.appendingPathComponent(name + ".png"))
+        // The window server draws Liquid Glass layers that cacheDisplay leaves out,
+        // so capture the real window first and fall back to cacheDisplay.
+        let file = folder.appendingPathComponent(name + ".png")
+        let capture = Process()
+        capture.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        capture.arguments = ["-x", "-o", "-l", String(window.windowNumber), file.path]
+        if (try? capture.run()) != nil {
+            for _ in 0..<50 where capture.isRunning { try? await Task.sleep(for: .milliseconds(100)) }
+            if capture.isRunning { capture.terminate() }
+        }
+        let captured = (try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+        if captured < 6_000 {
+            let bounds = hosting.bounds
+            if let rep = hosting.bitmapImageRepForCachingDisplay(in: bounds) {
+                hosting.cacheDisplay(in: bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?.write(to: file)
             }
         }
         window.orderOut(nil)
