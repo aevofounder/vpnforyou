@@ -56,7 +56,8 @@ fi
 if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then
   found=$(grep_links)
 fi
-# UUID в YAML правила .gitleaks.toml не видят, поэтому проверяем его отдельно.
+# Запасная проверка UUID в любом формате: на случай, если gitleaks нет
+# или в .gitleaks.toml нет правила для этой записи.
 if ! printf '%s' "$found" | grep -q 'uuid'; then
   extra=$(grep_uuid)
   [ -n "$extra" ] && found=$(printf '%s\n%s' "$found" "$extra" | sed '/^$/d')
