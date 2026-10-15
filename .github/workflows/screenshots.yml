@@ -1,0 +1,81 @@
+name: Screenshots
+
+# Renders every screen of a Debug build with made-up data (example.com
+# servers, documentation IPs) and commits the PNGs to docs/screenshots.
+# Runs only when the commit message contains "[screenshots]".
+on:
+  push:
+    branches-ignore:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  render:
+    if: contains(github.event.head_commit.message, '[screenshots]')
+    runs-on: macos-26
+    timeout-minutes: 30
+    permissions:
+      contents: write # push the rendered images back to this branch
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install XcodeGen (pinned version, verified checksum)
+        env:
+          XCODEGEN_VERSION: 2.46.0
+          XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -sSfL -o xcodegen.zip \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
+          echo "${XCODEGEN_SHA256}  xcodegen.zip" | shasum -a 256 -c -
+          unzip -q xcodegen.zip
+
+      - name: Generate Xcode project
+        run: '"$RUNNER_TEMP/xcodegen/bin/xcodegen" generate'
+
+      - name: Build Debug app
+        run: |
+          xcodebuild \
+            -project VPNforYou.xcodeproj \
+            -scheme VPNforYou \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath build/DerivedData \
+            build
+
+      - name: Render screens
+        run: |
+          APP="build/DerivedData/Build/Products/Debug/VPNforYou.app"
+          rm -rf docs/screenshots
+          mkdir -p docs/screenshots
+          "$APP/Contents/MacOS/VPNforYou" --render-screenshots "$PWD/docs/screenshots" &
+          PID=$!
+          ( sleep 300 && kill "$PID" 2>/dev/null ) &
+          wait "$PID" || true
+          # Drop captures that came out empty (no screen-recording permission).
+          find docs/screenshots -name '*.png' -size -6k -print -delete
+          ls -la docs/screenshots
+          for file in docs/screenshots/*.png; do sips -g pixelWidth -g pixelHeight "$file" | tail -2 | tr '\n' ' '; echo; done
+
+      - name: Commit images to the branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/screenshots
+          if git diff --cached --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git commit -m "Update screenshots"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${BRANCH}"
