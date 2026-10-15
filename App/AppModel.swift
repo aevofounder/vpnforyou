@@ -9,7 +9,7 @@ import VPNCore
 @Observable
 final class AppModel {
     enum Route {
-        case home, servers, add
+        case home, servers, add, speed
     }
 
     struct Selection {
@@ -88,6 +88,15 @@ final class AppModel {
             }
         }
         return nil
+    }
+
+    /// Every visible server of every profile, for pings.
+    var allServers: [ServerConfig] {
+        profiles.flatMap(\.visibleServers)
+    }
+
+    var allGroups: [ServerGroup] {
+        profiles.flatMap(\.groups)
     }
 
     /// Servers and groups of the profile that holds the selection, for a connect request.

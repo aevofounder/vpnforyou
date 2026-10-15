@@ -64,14 +64,19 @@ struct ServerRowButton: View {
     private let subtitle: String
     private let isGroup: Bool
     private let isSelected: Bool
+    private let ping: Int?
+    private let pingFailed: Bool
     private let action: () -> Void
 
-    init(code: String?, title: String, subtitle: String, isGroup: Bool, isSelected: Bool, action: @escaping () -> Void) {
+    init(code: String?, title: String, subtitle: String, isGroup: Bool, isSelected: Bool,
+         ping: Int? = nil, pingFailed: Bool = false, action: @escaping () -> Void) {
         self.code = code
         self.title = title
         self.subtitle = subtitle
         self.isGroup = isGroup
         self.isSelected = isSelected
+        self.ping = ping
+        self.pingFailed = pingFailed
         self.action = action
     }
 
@@ -98,6 +103,7 @@ struct ServerRowButton: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 6)
+                PingBadge(milliseconds: ping, failed: pingFailed)
                 if isSelected {
                     Image(systemName: "checkmark")
                         .font(.system(size: 12, weight: .bold))

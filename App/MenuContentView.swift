@@ -20,12 +20,16 @@ struct MenuContentView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 StatusCard()
+                IPCard()
                 CurrentServerCard()
+                QuickTiles()
                 footer
             case .servers:
                 ServersView()
             case .add:
                 AddKeysView()
+            case .speed:
+                SpeedTestView()
             }
         }
         .padding(12)
@@ -137,6 +141,9 @@ private struct StatusCard: View {
                 }
                 if needsHelper {
                     HelperInstallRow()
+                }
+                if connection.state.isConnected {
+                    TrafficStrip()
                 }
             }
         }
@@ -308,6 +315,73 @@ private struct CurrentServerCard: View {
                 }
             }
         }
+    }
+}
+
+/// Shortcuts to the other screens as small tiles, like Control Center.
+private struct QuickTiles: View {
+    @Environment(AppModel.self) private var model
+    @Environment(Diagnostics.self) private var diagnostics
+
+    var body: some View {
+        HStack(spacing: 8) {
+            QuickTile(icon: "speedometer", title: "Скорость", subtitle: speedSubtitle) {
+                model.route = .speed
+            }
+            QuickTile(icon: "globe", title: "Серверы", subtitle: "Пинг и выбор") {
+                model.route = .servers
+            }
+        }
+    }
+
+    private var speedSubtitle: String {
+        guard let last = diagnostics.speedHistory.first, let down = last.downloadMbps else { return "Проверить" }
+        return "↓ \(Format.mbps(down)) Мбит/с"
+    }
+}
+
+struct QuickTile: View {
+    @AppStorage(AppearanceKey.material) private var material: WindowMaterial = .glass
+    let icon: String
+    let title: String
+    let subtitle: String
+    let action: () -> Void
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.tint)
+                    .frame(width: 28, height: 28)
+                    .background(Palette.surface2.opacity(0.8), in: Circle())
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(subtitle)
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(Palette.ink3)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity)
+            .background(material == .solid ? Palette.surface : Palette.glassFill, in: shape)
+            .overlay(shape.strokeBorder(material == .solid ? Palette.line : Palette.glassEdge))
+            .contentShape(shape)
+        }
+        .buttonStyle(PressableStyle())
+    }
+}
+
+/// Scales down a little on press so the tile feels like it heard the click.
+struct PressableStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 

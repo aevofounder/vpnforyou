@@ -6,6 +6,29 @@ enum Format {
         ByteCountFormatter.string(fromByteCount: value, countStyle: .binary)
     }
 
+    /// Traffic rate from the core, e.g. "2,4 МБ/с".
+    static func rate(_ bytesPerSecond: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: max(0, bytesPerSecond), countStyle: .decimal) + "/с"
+    }
+
+    /// Speed test number without the unit: "95,3", "940", "0,8".
+    static func mbps(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = value >= 100 ? 0 : 1
+        formatter.minimumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: value)) ?? "\(Int(value))"
+    }
+
+    static func milliseconds(_ value: Double) -> String {
+        "\(Int(value.rounded())) мс"
+    }
+
+    static func time(_ date: Date) -> String {
+        date.formatted(date: .omitted, time: .shortened)
+    }
+
     /// "102,5 ГБ из 1 000 ГБ · осталось 24 дня".
     static func usage(_ usage: SubscriptionUsage) -> String {
         var parts: [String] = []

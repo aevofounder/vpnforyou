@@ -27,7 +27,13 @@ final class ConnectionManager {
         case unknown, notInstalled, outdated, ready, installing
     }
 
-    private(set) var state: State = .disconnected
+    private(set) var state: State = .disconnected {
+        didSet {
+            if state != oldValue { onStateChange?(state) }
+        }
+    }
+    /// Lets other stores react to connecting and disconnecting (IP check, pings).
+    @ObservationIgnored var onStateChange: (@MainActor (State) -> Void)?
     private(set) var helperState: HelperState = .unknown
     private(set) var connectedID: String?
     private(set) var traffic: [TrafficSample] = []
@@ -39,6 +45,12 @@ final class ConnectionManager {
     @ObservationIgnored private var lastRequest: CoreStartRequest?
 
     var client: MihomoClient? { session.map(MihomoClient.init(session:)) }
+
+    /// Server and group ids in the running core config.
+    var runningIDs: Set<String> {
+        guard state.isConnected, let lastRequest else { return [] }
+        return Set(lastRequest.servers.map(\.id) + lastRequest.groups.map(\.id))
+    }
     var latestTraffic: TrafficSample? { traffic.last }
 
     init() {

@@ -107,6 +107,7 @@ enum Palette {
     static let line = Color.adaptive(light: 0xE2E2DD, dark: 0x2C2D31)
     static let track = Color.adaptive(light: 0xCBCBC6, dark: 0x45464C)
     static let warn = Color.adaptive(light: 0x9A5B00, dark: 0xE0A33A)
+    static let bad = Color.adaptive(light: 0xB3261E, dark: 0xF2766B)
 
     /// Translucent card fill and edge used on top of glass.
     static let glassFill = Color.adaptive(light: 0xFFFFFF, lightAlpha: 0.5, dark: 0xFFFFFF, darkAlpha: 0.06)

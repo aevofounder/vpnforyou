@@ -15,9 +15,23 @@ struct SettingsView: View {
 
 private struct ConnectionSettingsView: View {
     @Environment(ConnectionManager.self) private var connection
+    @AppStorage(Diagnostics.serviceKey) private var ipService: IPService = .ipinfo
+    @AppStorage(Diagnostics.checkOnConnectKey) private var checkOnConnect = true
 
     var body: some View {
         Form {
+            Section {
+                Picker("Сервис проверки IP", selection: $ipService) {
+                    ForEach(IPService.allCases) { Text($0.title).tag($0) }
+                }
+                Toggle("Проверять IP при подключении", isOn: $checkOnConnect)
+            } header: {
+                Text("IP-адрес")
+            } footer: {
+                Text("Запрос уходит только в выбранный сервис: один напрямую и один через VPN, чтобы сравнить адреса. Тест скорости обращается к speed.cloudflare.com, только когда вы его запускаете.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Section {
                 LabeledContent("Помощник") {
                     Text(statusText)
