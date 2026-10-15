@@ -1,0 +1,48 @@
+# ===== СЕКРЕТЫ: никогда не коммитить =====
+# Ключи, подписки и конфиги с ними живут только на твоём маке.
+.env
+.env.*
+*.local.json
+config.json
+secrets/
+private/
+subscriptions.txt
+subscription.txt
+keys.txt
+*.key
+*.pem
+*.p8
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+*.keychain
+*.keychain-db
+wg*.conf
+*.wg.conf
+
+# ===== macOS =====
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# ===== Xcode / Swift =====
+# Проект генерируется XcodeGen из project.yml
+/VPNforYou.xcodeproj/
+build/
+dist/
+DerivedData/
+.build/
+.swiftpm/
+xcuserdata/
+*.xcuserstate
+*.dSYM
+*.dSYM.zip
+
+# ===== Ядро sing-box: скачивается в CI, в git не хранится =====
+/Vendor/
+
+# ===== Редакторы =====
+.vscode/
+.idea/

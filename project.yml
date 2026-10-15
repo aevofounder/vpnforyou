@@ -1,0 +1,44 @@
+# Проект Xcode генерируется из этого файла: xcodegen generate
+# (сам .xcodeproj в git не хранится).
+name: VPNforYou
+
+options:
+  bundleIdPrefix: io.github.aevofounder
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+
+packages:
+  VPNCore:
+    path: Packages/VPNCore
+
+targets:
+  VPNforYou:
+    type: application
+    platform: macOS
+    sources:
+      - path: App
+    dependencies:
+      - package: VPNCore
+    settings:
+      base:
+        PRODUCT_NAME: VPNforYou
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.aevofounder.vpnforyou
+        GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_KEY_CFBundleDisplayName: VPNforYou
+        # Приложение живёт в строке меню, без иконки в Dock.
+        INFOPLIST_KEY_LSUIElement: "YES"
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+        INFOPLIST_KEY_NSHumanReadableCopyright: "GPL-3.0-or-later"
+        # Без аккаунта Apple Developer: ad-hoc подпись.
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+    scheme:
+      gatherCoverageData: false
