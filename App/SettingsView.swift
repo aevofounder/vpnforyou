@@ -15,37 +15,53 @@ private struct AppearanceSettingsView: View {
     @AppStorage(AppearanceKey.theme) private var theme: AppTheme = .system
     @AppStorage(AppearanceKey.accent) private var accent: AccentColor = .blue
     @AppStorage(AppearanceKey.density) private var density: Density = .comfortable
+    @AppStorage(AppearanceKey.material) private var material: WindowMaterial = .glass
     @AppStorage(AppearanceKey.hideIP) private var hideIP = false
 
     var body: some View {
         Form {
-            Picker("Тема", selection: $theme) {
-                ForEach(AppTheme.allCases) { option in
-                    Text(option.title).tag(option)
+            Section {
+                Picker("Материал", selection: $material) {
+                    ForEach(WindowMaterial.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
                 }
+                .pickerStyle(.segmented)
+            } footer: {
+                Text("Настоящий Liquid Glass — в macOS 26 Tahoe. На macOS 14–15 вместо него матовое стекло системы.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .pickerStyle(.segmented)
 
-            LabeledContent("Акцентный цвет") {
-                HStack(spacing: 10) {
-                    ForEach(AccentColor.allCases) { option in
-                        AccentSwatch(option: option, isSelected: option == accent) {
-                            accent = option
+            Section {
+                Picker("Тема", selection: $theme) {
+                    ForEach(AppTheme.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                LabeledContent("Акцентный цвет") {
+                    HStack(spacing: 10) {
+                        ForEach(AccentColor.allCases) { option in
+                            AccentSwatch(option: option, isSelected: option == accent) {
+                                accent = option
+                            }
                         }
                     }
                 }
-            }
 
-            Picker("Плотность", selection: $density) {
-                ForEach(Density.allCases) { option in
-                    Text(option.title).tag(option)
+                Picker("Плотность", selection: $density) {
+                    ForEach(Density.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
                 }
-            }
-            .pickerStyle(.segmented)
+                .pickerStyle(.segmented)
 
-            Toggle(isOn: $hideIP) {
-                Text("Скрывать IP-адреса")
-                Text("Показывать \(IPMasker.mask("203.0.113.57")) — удобно при демонстрации экрана")
+                Toggle(isOn: $hideIP) {
+                    Text("Скрывать IP-адреса")
+                    Text("Показывать \(IPMasker.mask("203.0.113.57")) — удобно при демонстрации экрана")
+                }
             }
         }
         .formStyle(.grouped)

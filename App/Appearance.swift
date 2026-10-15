@@ -6,7 +6,24 @@ enum AppearanceKey {
     static let theme = "appearance.theme"
     static let accent = "appearance.accent"
     static let density = "appearance.density"
+    static let material = "appearance.material"
     static let hideIP = "privacy.hideIP"
+}
+
+/// Window material. Liquid Glass needs macOS 26; on macOS 14–15
+/// the app falls back to the system's frosted material.
+enum WindowMaterial: String, CaseIterable, Identifiable {
+    case glass, frosted, solid
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .glass: "Liquid Glass"
+        case .frosted: "Матовое стекло"
+        case .solid: "Сплошной"
+        }
+    }
 }
 
 enum AppTheme: String, CaseIterable, Identifiable {
@@ -89,6 +106,10 @@ enum Palette {
     static let ink3 = Color.adaptive(light: 0x686B72, dark: 0x8E9198)
     static let line = Color.adaptive(light: 0xE2E2DD, dark: 0x2C2D31)
     static let track = Color.adaptive(light: 0xCBCBC6, dark: 0x45464C)
+
+    /// Translucent card fill and edge used on top of glass.
+    static let glassFill = Color.adaptive(light: 0xFFFFFF, lightAlpha: 0.5, dark: 0xFFFFFF, darkAlpha: 0.06)
+    static let glassEdge = Color.adaptive(light: 0xFFFFFF, lightAlpha: 0.6, dark: 0xFFFFFF, darkAlpha: 0.08)
 }
 
 extension Color {
@@ -97,21 +118,24 @@ extension Color {
     }
 
     /// A color that follows the light/dark appearance of the window it is drawn in.
-    static func adaptive(light: UInt32, dark: UInt32) -> Color {
+    static func adaptive(
+        light: UInt32, lightAlpha: CGFloat = 1,
+        dark: UInt32, darkAlpha: CGFloat = 1
+    ) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
             let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            return NSColor(hex: isDark ? dark : light)
+            return isDark ? NSColor(hex: dark, alpha: darkAlpha) : NSColor(hex: light, alpha: lightAlpha)
         })
     }
 }
 
 extension NSColor {
-    convenience init(hex: UInt32) {
+    convenience init(hex: UInt32, alpha: CGFloat = 1) {
         self.init(
             srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
             green: CGFloat((hex >> 8) & 0xFF) / 255,
             blue: CGFloat(hex & 0xFF) / 255,
-            alpha: 1
+            alpha: alpha
         )
     }
 }

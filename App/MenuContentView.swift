@@ -16,16 +16,13 @@ struct MenuContentView: View {
         }
         .padding(12)
         .frame(width: 360)
-        .background(Palette.background)
+        .background { WindowBackground() }
         .foregroundStyle(Palette.ink)
     }
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "shield")
-                .font(.system(size: 14, weight: .medium))
-            Text("VPNforYou")
-                .font(.system(size: 14, weight: .semibold))
+            StatusPill(text: "VPN выключен", isOn: false)
             Spacer()
             Button {
                 NSApp.activate()
@@ -33,14 +30,14 @@ struct MenuContentView: View {
             } label: {
                 Image(systemName: "slider.horizontal.3")
                     .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
+                    .contentShape(Circle())
             }
-            .buttonStyle(.plain)
+            .glassButtonStyle()
+            .buttonBorderShape(.circle)
             .foregroundStyle(Palette.ink2)
             .help("Настройки")
             .accessibilityLabel("Настройки")
         }
-        .padding(.leading, 6)
     }
 
     private var footer: some View {
@@ -70,7 +67,7 @@ private struct StatusCard: View {
                         Circle()
                             .fill(Palette.track)
                             .frame(width: 8, height: 8)
-                        Text("Не подключено")
+                        Text("Выключено")
                             .font(.system(size: 20, weight: .semibold))
                     }
                     Text("Подключение появится в следующих версиях")
@@ -101,9 +98,33 @@ private struct ServersCard: View {
     }
 }
 
-/// White card with a hairline border, padding follows the density setting.
+/// Status pill in the header, in the spirit of the Dynamic Island:
+/// "VPN выключен" now, later "NL · 00:12:41" while connected.
+struct StatusPill: View {
+    @AppStorage(AppearanceKey.accent) private var accent: AccentColor = .blue
+    let text: String
+    let isOn: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(isOn ? accent.color : Palette.track)
+                .frame(width: 8, height: 8)
+            Text(text)
+                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 30)
+        .glassCapsule(tint: isOn ? accent.color.opacity(0.25) : nil)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Content card. On glass it is a light translucent fill (no glass on glass),
+/// on the solid material a white card. Padding follows the density setting.
 struct Card<Content: View>: View {
     @AppStorage(AppearanceKey.density) private var density: Density = .comfortable
+    @AppStorage(AppearanceKey.material) private var material: WindowMaterial = .glass
     private let content: Content
 
     init(@ViewBuilder content: () -> Content) {
@@ -111,14 +132,12 @@ struct Card<Content: View>: View {
     }
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         content
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(density.padding)
-            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Palette.line)
-            )
+            .background(material == .solid ? Palette.surface : Palette.glassFill, in: shape)
+            .overlay(shape.strokeBorder(material == .solid ? Palette.line : Palette.glassEdge))
     }
 }
 
