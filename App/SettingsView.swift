@@ -6,8 +6,56 @@ struct SettingsView: View {
         TabView {
             AppearanceSettingsView()
                 .tabItem { Label("Внешний вид", systemImage: "paintbrush") }
+            ConnectionSettingsView()
+                .tabItem { Label("Подключение", systemImage: "network") }
         }
         .frame(width: 520)
+    }
+}
+
+private struct ConnectionSettingsView: View {
+    @Environment(ConnectionManager.self) private var connection
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Помощник") {
+                    Text(statusText)
+                        .foregroundStyle(connection.helperState == .ready ? Palette.ink2 : Palette.warn)
+                }
+                HStack {
+                    Button(connection.helperState == .ready ? "Переустановить" : "Установить") {
+                        Task { await connection.installHelper() }
+                    }
+                    .disabled(connection.helperState == .installing)
+                    Button("Удалить помощника", role: .destructive) {
+                        Task { await connection.uninstallHelper() }
+                    }
+                    .disabled(connection.helperState == .notInstalled || connection.helperState == .installing)
+                }
+                if let error = connection.lastError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(Palette.warn)
+                }
+            } footer: {
+                Text("Помощник работает от имени администратора и включает VPN без пароля при каждом подключении. Он принимает команды только от вашей учётной записи.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .task { await connection.refreshHelperState() }
+    }
+
+    private var statusText: String {
+        switch connection.helperState {
+        case .unknown: "проверяю…"
+        case .notInstalled: "не установлен"
+        case .outdated: "устарел, нужна переустановка"
+        case .ready: "установлен"
+        case .installing: "установка…"
+        }
     }
 }
 

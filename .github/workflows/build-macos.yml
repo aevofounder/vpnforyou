@@ -27,7 +27,9 @@ jobs:
           xcodebuild -version
           swift --version
 
-      - name: Test VPNCore
+      - name: Test VPNCore and the helper
+        env:
+          MIHOMO_CHECK_DIR: ${{ runner.temp }}/mihomo-check
         run: swift test --package-path Packages/VPNCore
 
       - name: Install XcodeGen (pinned version, verified checksum)
@@ -54,11 +56,24 @@ jobs:
             -derivedDataPath build/DerivedData \
             build
 
+      - name: Add helper and mihomo core
+        run: scripts/bundle-extras.sh "build/DerivedData/Build/Products/Release/VPNforYou.app"
+
+      - name: Check generated configs with mihomo -t
+        run: |
+          CORE="build/DerivedData/Build/Products/Release/VPNforYou.app/Contents/MacOS/mihomo"
+          "$CORE" -v
+          for dir in "$RUNNER_TEMP"/mihomo-check/*/; do
+            "$CORE" -t -d "$dir" -f "$dir/config.json"
+          done
+
       - name: Verify and package
         run: |
           APP="build/DerivedData/Build/Products/Release/VPNforYou.app"
           codesign --verify --deep --strict --verbose=2 "$APP"
           lipo -info "$APP/Contents/MacOS/VPNforYou"
+          plutil -extract NSAppTransportSecurity.NSAllowsLocalNetworking raw "$APP/Contents/Info.plist" | grep -qx true
+          plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist"
           mkdir -p dist
           ditto -c -k --keepParent "$APP" dist/VPNforYou.zip
           shasum -a 256 dist/VPNforYou.zip | tee dist/VPNforYou.zip.sha256

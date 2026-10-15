@@ -63,6 +63,8 @@ struct ServersView: View {
 
 private struct ProfileSection: View {
     @Environment(AppModel.self) private var model
+    @Environment(ConnectionManager.self) private var connection
+    @Environment(RoutingStore.self) private var routing
     let profile: Profile
 
     var body: some View {
@@ -86,7 +88,7 @@ private struct ProfileSection: View {
                             subtitle: "Автовыбор · " + Format.plural(group.memberIDs.count, "сервер", "сервера", "серверов"),
                             isGroup: true,
                             isSelected: model.selectedID == group.id
-                        ) { model.select(group.id) }
+                        ) { choose(group.id) }
                     }
                     ForEach(profile.visibleServers) { server in
                         ServerRowButton(
@@ -95,7 +97,7 @@ private struct ProfileSection: View {
                             subtitle: server.summary,
                             isGroup: false,
                             isSelected: model.selectedID == server.id
-                        ) { model.select(server.id) }
+                        ) { choose(server.id) }
                     }
                 }
 
@@ -106,6 +108,10 @@ private struct ProfileSection: View {
                 }
             }
         }
+    }
+
+    private func choose(_ id: String) {
+        Task { await VPNActions.select(id, model: model, connection: connection, routing: routing) }
     }
 
     private var header: some View {

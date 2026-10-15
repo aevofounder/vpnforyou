@@ -90,6 +90,24 @@ final class AppModel {
         return nil
     }
 
+    /// Servers and groups of the profile that holds the selection, for a connect request.
+    func connectionParts() -> (servers: [ServerConfig], groups: [ServerGroup], selectedID: String)? {
+        guard let selectedID else { return nil }
+        guard let profile = profiles.first(where: { profile in
+            profile.server(id: selectedID) != nil || profile.groups.contains { $0.id == selectedID }
+        }) else { return nil }
+        return (profile.servers, profile.groups, selectedID)
+    }
+
+    /// Display name and country for a server or group id (for the status pill and activity).
+    func label(for id: String) -> (code: String?, name: String)? {
+        for profile in profiles {
+            if let group = profile.groups.first(where: { $0.id == id }) { return (group.countryCode, group.displayName) }
+            if let server = profile.server(id: id) { return (server.countryCode, server.displayName) }
+        }
+        return nil
+    }
+
     func statusLine(for profile: Profile) -> String {
         let count = profile.visibleServers.count + profile.groups.count
         var parts = [Format.plural(count, "сервер", "сервера", "серверов")]
