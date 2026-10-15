@@ -78,6 +78,10 @@ jobs:
           ditto -c -k --keepParent "$APP" dist/VPNforYou.zip
           shasum -a 256 dist/VPNforYou.zip | tee dist/VPNforYou.zip.sha256
 
+      # The release workflow runs only on tags; this keeps its .dmg step tested.
+      - name: Check the release disk image
+        run: scripts/make-dmg.sh "build/DerivedData/Build/Products/Release/VPNforYou.app" 0.0.0-ci "$RUNNER_TEMP/dmg-check"
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           path: dist/VPNforYou.zip

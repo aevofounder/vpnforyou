@@ -1,0 +1,125 @@
+name: Release
+
+# A tag like v0.2.0 builds the app the same way as build-macos.yml,
+# packs it into a .dmg with a SHA-256 file and creates a DRAFT release.
+# Nothing is published until the owner reviews the draft and presses
+# "Publish release" on GitHub.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 40
+    permissions:
+      contents: write # create the draft release and upload files
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read version from the tag
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag must look like v1.2.3, got: $TAG" >&2
+            exit 1
+          fi
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Test VPNCore and the helper
+        env:
+          MIHOMO_CHECK_DIR: ${{ runner.temp }}/mihomo-check
+        run: swift test --package-path Packages/VPNCore
+
+      - name: Install XcodeGen (pinned version, verified checksum)
+        env:
+          XCODEGEN_VERSION: 2.46.0
+          XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -sSfL -o xcodegen.zip \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
+          echo "${XCODEGEN_SHA256}  xcodegen.zip" | shasum -a 256 -c -
+          unzip -q xcodegen.zip
+
+      - name: Generate Xcode project
+        run: '"$RUNNER_TEMP/xcodegen/bin/xcodegen" generate'
+
+      - name: Build app (universal, ad-hoc signed)
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          xcodebuild \
+            -project VPNforYou.xcodeproj \
+            -scheme VPNforYou \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath build/DerivedData \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            build
+
+      - name: Add helper and mihomo core
+        run: scripts/bundle-extras.sh "build/DerivedData/Build/Products/Release/VPNforYou.app"
+
+      - name: Check generated configs with mihomo -t
+        run: |
+          CORE="build/DerivedData/Build/Products/Release/VPNforYou.app/Contents/MacOS/mihomo"
+          for dir in "$RUNNER_TEMP"/mihomo-check/*/; do
+            "$CORE" -t -d "$dir" -f "$dir/config.json"
+          done
+
+      - name: Verify the app
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          APP="build/DerivedData/Build/Products/Release/VPNforYou.app"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          lipo -info "$APP/Contents/MacOS/VPNforYou"
+          test "$(plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist")" = "$VERSION"
+
+      - name: Build the disk image
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: scripts/make-dmg.sh "build/DerivedData/Build/Products/Release/VPNforYou.app" "$VERSION" dist
+
+      - name: Create a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          SHA="$(cut -d' ' -f1 "dist/VPNforYou-$VERSION.dmg.sha256")"
+          {
+            echo "Сборка без подписи Apple: при первом запуске macOS спросит разрешение."
+            echo "Как установить и открыть: [docs/INSTALL.md](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/INSTALL.md)."
+            echo
+            echo "SHA-256 \`VPNforYou-$VERSION.dmg\`:"
+            echo
+            echo "\`\`\`"
+            echo "$SHA"
+            echo "\`\`\`"
+            echo
+            echo "Внутри: ядро mihomo $(grep -m1 '^MIHOMO_VERSION=' scripts/bundle-extras.sh | cut -d'"' -f2) (GPL-3.0)."
+          } > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft \
+            --verify-tag \
+            --title "VPNforYou $VERSION" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            "dist/VPNforYou-$VERSION.dmg" \
+            "dist/VPNforYou-$VERSION.dmg.sha256"

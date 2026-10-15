@@ -35,9 +35,12 @@ VPN-клиент для macOS в строке меню: импорт ключе�
 - `Packages/VPNCore/`: Swift-пакет с логикой (разбор ключей, подписки, генерация конфига mihomo и файла правил, маскировка логов). Он должен собираться и тестироваться на Linux:
   - только Foundation, без `Security`, `AppKit`, `SwiftUI`, `NetworkExtension`;
   - сетевые запросы через `FoundationNetworking` под `#if canImport(FoundationNetworking)` или в слое приложения.
+  - `VPNHelperCore` и `vpnforyou-helper`: помощник от имени root (LaunchDaemon). Сокет `0600`, проверка uid, принимает только типизированные команды и сам строит конфиг. Любое изменение здесь — через `security-review`.
 - `project.yml`: проект Xcode генерируется XcodeGen, `.xcodeproj` в git не хранится.
-- `.github/workflows/`: `build-macos.yml` (тесты VPNCore, сборка, ad-hoc подпись, zip) и `secret-scan.yml` (gitleaks).
-- Ядро mihomo скачивается в CI фиксированной версии с проверкой SHA-256 и в git не хранится.
+- `.github/workflows/`: `build-macos.yml` (тесты VPNCore, сборка, ad-hoc подпись, `mihomo -t`, zip), `release.yml` (тег `v*` → `.dmg` и черновик релиза) и `secret-scan.yml` (gitleaks).
+- `scripts/bundle-extras.sh` кладёт в `.app` помощника и ядро, `scripts/make-dmg.sh` собирает `.dmg`.
+- Ядро mihomo скачивается в CI фиксированной версии с проверкой SHA-256 (`scripts/bundle-extras.sh`) и в git не хранится.
+- Теги и публикацию релизов делает только владелец репозитория.
 
 ## Команды
 

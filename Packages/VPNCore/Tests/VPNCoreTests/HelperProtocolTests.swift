@@ -35,4 +35,13 @@ final class HelperProtocolTests: XCTestCase {
         let decoded = try JSONDecoder().decode(HelperRequest.self, from: JSONEncoder().encode(request))
         XCTAssertEqual(decoded, request)
     }
+
+    func testUninstallRemovesEverythingTheInstallerAdded() {
+        let script = HelperInstallScript.uninstall()
+        for path in [HelperProtocol.plistPath, HelperProtocol.helperPath, HelperProtocol.socketPath,
+                     HelperProtocol.supportDirectory, HelperProtocol.logPath] {
+            XCTAssertTrue(script.contains(HelperInstallScript.shellQuote(path)), path)
+        }
+        XCTAssertTrue(script.hasPrefix("launchctl bootout system/\(HelperProtocol.label)"))
+    }
 }

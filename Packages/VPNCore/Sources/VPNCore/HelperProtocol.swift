@@ -114,6 +114,7 @@ public enum HelperInstallScript {
             "launchctl bootout system/\(HelperProtocol.label) 2>/dev/null || true",
             "rm -f \(shellQuote(HelperProtocol.plistPath)) \(shellQuote(HelperProtocol.helperPath)) \(shellQuote(HelperProtocol.socketPath))",
             "rm -rf \(shellQuote(HelperProtocol.supportDirectory))",
+            "rm -f \(shellQuote(HelperProtocol.logPath))",
         ].joined(separator: "\n")
     }
 
