@@ -19,7 +19,13 @@ ln -s /Applications "$STAGE/Applications"
 
 NAME="VPNforYou-$VERSION.dmg"
 hdiutil create -volname "VPNforYou $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$OUT/$NAME"
-hdiutil verify "$OUT/$NAME"
+# hdiutil create can return while diskimages-helper still holds the file
+# ("Resource temporarily unavailable"): give verify a few tries.
+for attempt in 1 2 3 4 5; do
+  if hdiutil verify "$OUT/$NAME"; then break; fi
+  [[ "$attempt" == 5 ]] && { echo "dmg verify failed" >&2; exit 1; }
+  sleep 3
+done
 rm -rf "$STAGE"
 
 (cd "$OUT" && shasum -a 256 "$NAME" | tee "$NAME.sha256")
