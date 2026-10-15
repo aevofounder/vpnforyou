@@ -45,17 +45,16 @@ enum Format {
 
     /// Russian plural forms: 1 день, 2 дня, 5 дней.
     static func plural(_ count: Int, _ one: String, _ few: String, _ many: String) -> String {
+        "\(count) \(word(count, one, few, many))"
+    }
+
+    /// Just the word in the right form: день, дня, дней.
+    static func word(_ count: Int, _ one: String, _ few: String, _ many: String) -> String {
         let mod10 = count % 10
         let mod100 = count % 100
-        let word: String
-        if mod10 == 1, mod100 != 11 {
-            word = one
-        } else if (2...4).contains(mod10), !(12...14).contains(mod100) {
-            word = few
-        } else {
-            word = many
-        }
-        return "\(count) \(word)"
+        if mod10 == 1, mod100 != 11 { return one }
+        if (2...4).contains(mod10), !(12...14).contains(mod100) { return few }
+        return many
     }
 
     static func relative(_ date: Date) -> String {

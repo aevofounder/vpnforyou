@@ -30,6 +30,8 @@ struct MenuContentView: View {
                 AddKeysView()
             case .speed:
                 SpeedTestView()
+            case .apps:
+                AppsView()
             }
         }
         .padding(12)
@@ -322,21 +324,48 @@ private struct CurrentServerCard: View {
 private struct QuickTiles: View {
     @Environment(AppModel.self) private var model
     @Environment(Diagnostics.self) private var diagnostics
+    @Environment(ConnectionManager.self) private var connection
+    @Environment(RoutingStore.self) private var routing
+    @Environment(InstalledApps.self) private var installed
+    @AppStorage(AppearanceKey.theme) private var theme: AppTheme = .system
+    @AppStorage(AppearanceKey.accent) private var accent: AccentColor = .blue
 
     var body: some View {
         HStack(spacing: 8) {
             QuickTile(icon: "speedometer", title: "Скорость", subtitle: speedSubtitle) {
                 model.route = .speed
             }
-            QuickTile(icon: "globe", title: "Серверы", subtitle: "Пинг и выбор") {
-                model.route = .servers
+            QuickTile(icon: "square.grid.2x2", title: "Программы", subtitle: appsSubtitle) {
+                model.route = .apps
+            }
+            QuickTile(icon: "waveform.path.ecg", title: "Активность", subtitle: "Кто в сети") {
+                openActivity()
             }
         }
     }
 
     private var speedSubtitle: String {
         guard let last = diagnostics.speedHistory.first, let down = last.downloadMbps else { return "Проверить" }
-        return "↓ \(Format.mbps(down)) Мбит/с"
+        return "↓ \(Format.mbps(down))"
+    }
+
+    private var appsSubtitle: String {
+        switch routing.mode {
+        case .all: "Все через VPN"
+        case .onlySelected: "Только \(routing.paths.count)"
+        case .allExceptSelected: "Кроме \(routing.paths.count)"
+        }
+    }
+
+    private func openActivity() {
+        AuxWindow.show(id: "activity", title: "Активность", size: NSSize(width: 640, height: 480)) {
+            ActivityView()
+                .environment(connection)
+                .environment(routing)
+                .environment(installed)
+                .tint(accent.color)
+                .preferredColorScheme(theme.colorScheme)
+        }
     }
 }
 
@@ -350,29 +379,31 @@ struct QuickTile: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         Button(action: action) {
-            HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.tint)
-                    .frame(width: 28, height: 28)
+                    .frame(width: 26, height: 26)
                     .background(Palette.surface2.opacity(0.8), in: Circle())
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
                         .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
                     Text(subtitle)
                         .font(.system(size: 11).monospacedDigit())
                         .foregroundStyle(Palette.ink3)
                         .lineLimit(1)
                 }
-                Spacer(minLength: 0)
             }
             .padding(10)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(material == .solid ? Palette.surface : Palette.glassFill, in: shape)
             .overlay(shape.strokeBorder(material == .solid ? Palette.line : Palette.glassEdge))
             .contentShape(shape)
         }
         .buttonStyle(PressableStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
     }
 }
 

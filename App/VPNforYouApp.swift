@@ -9,6 +9,7 @@ struct VPNforYouApp: App {
     @State private var connection: ConnectionManager
     @State private var routing = RoutingStore()
     @State private var diagnostics: Diagnostics
+    @State private var installed = InstalledApps()
 
     init() {
         let connection = ConnectionManager()
@@ -28,6 +29,7 @@ struct VPNforYouApp: App {
                 .environment(connection)
                 .environment(routing)
                 .environment(diagnostics)
+                .environment(installed)
                 .tint(accent.color)
                 .preferredColorScheme(theme.colorScheme)
         } label: {

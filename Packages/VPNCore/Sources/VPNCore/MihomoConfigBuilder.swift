@@ -36,7 +36,7 @@ public enum MihomoConfigBuilder {
     public static let appProcessName = "VPNforYou"
 
     static let maxServers = 500
-    static let maxApps = 500
+    public static let maxApps = 500
 
     static let lanRanges = [
         "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8",

@@ -182,6 +182,7 @@ public enum ConnectionRates {
     public struct Row: Equatable, Sendable, Identifiable {
         public var id: String
         public var appName: String
+        public var appPath: String?
         public var destination: String
         public var isDirect: Bool
         public var downPerSecond: Int64
@@ -198,6 +199,7 @@ public enum ConnectionRates {
             return Row(
                 id: connection.id,
                 appName: connection.appName,
+                appPath: connection.appBundlePath,
                 destination: connection.destination,
                 isDirect: connection.isDirect,
                 downPerSecond: Int64(Double(down) / seconds),
