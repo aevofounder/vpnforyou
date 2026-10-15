@@ -106,6 +106,19 @@ public struct AppActivity: Equatable, Identifiable, Sendable {
     public var upPerSecond: Int64
     public var destinations: [String]
 
+    public init(id: String, name: String, path: String?, connections: Int, viaVPN: Int, direct: Int,
+                downPerSecond: Int64, upPerSecond: Int64, destinations: [String]) {
+        self.id = id
+        self.name = name
+        self.path = path
+        self.connections = connections
+        self.viaVPN = viaVPN
+        self.direct = direct
+        self.downPerSecond = downPerSecond
+        self.upPerSecond = upPerSecond
+        self.destinations = destinations
+    }
+
     /// Some connections go through the VPN and some around it.
     public var isMixed: Bool { viaVPN > 0 && direct > 0 }
 }
