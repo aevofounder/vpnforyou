@@ -1,0 +1,70 @@
+name: Build macOS
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Test VPNCore
+        run: swift test --package-path Packages/VPNCore
+
+      - name: Install XcodeGen (pinned version, verified checksum)
+        env:
+          XCODEGEN_VERSION: 2.46.0
+          XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -sSfL -o xcodegen.zip \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
+          echo "${XCODEGEN_SHA256}  xcodegen.zip" | shasum -a 256 -c -
+          unzip -q xcodegen.zip
+
+      - name: Generate Xcode project
+        run: '"$RUNNER_TEMP/xcodegen/bin/xcodegen" generate'
+
+      - name: Build app (universal, ad-hoc signed)
+        run: |
+          xcodebuild \
+            -project VPNforYou.xcodeproj \
+            -scheme VPNforYou \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath build/DerivedData \
+            build
+
+      - name: Verify and package
+        run: |
+          APP="build/DerivedData/Build/Products/Release/VPNforYou.app"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          lipo -info "$APP/Contents/MacOS/VPNforYou"
+          mkdir -p dist
+          ditto -c -k --keepParent "$APP" dist/VPNforYou.zip
+          shasum -a 256 dist/VPNforYou.zip | tee dist/VPNforYou.zip.sha256
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: dist/VPNforYou.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
