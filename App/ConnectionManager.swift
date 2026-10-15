@@ -81,6 +81,7 @@ final class ConnectionManager {
     func installHelper() async {
         helperState = .installing
         lastError = nil
+        AppLog.add("Установка помощника")
         do {
             try await HelperInstaller.install()
             // launchd starts the helper; give it a moment to open its socket.
@@ -90,8 +91,10 @@ final class ConnectionManager {
                 if helperState == .ready { return }
             }
             lastError = "Помощник установлен, но не отвечает. Перезагрузите Mac и попробуйте снова."
+            AppLog.add("Помощник не ответил после установки")
         } catch {
             lastError = error.localizedDescription
+            AppLog.add("Помощник не установлен: \(error.localizedDescription)")
             await refreshHelperState()
         }
     }
@@ -123,6 +126,8 @@ final class ConnectionManager {
         }
 
         state = .connecting
+        AppLog.add("Подключение: режим \(routing.rawValue), серверов в конфиге \(servers.count), групп \(groups.count)")
+        let started = Date()
         let session = CoreSession.random(controllerPort: ports.0, mixedPort: ports.1)
         let request = CoreStartRequest(servers: servers, groups: groups, selectedID: selectedID,
                                        routing: routing, appPaths: appPaths, session: session)
@@ -143,17 +148,20 @@ final class ConnectionManager {
             connectedID = selectedID
             traffic = []
             state = .connected(since: Date())
+            AppLog.add(String(format: "Подключено за %.1f с", Date().timeIntervalSince(started)))
             startMonitor(client)
         } catch {
             _ = try? await Self.call(HelperRequest(command: .stop))
             self.session = nil
             state = .failed(Self.describe(error))
+            AppLog.add("Ошибка подключения: \(Self.describe(error))")
         }
     }
 
     func disconnect() async {
         guard state != .disconnected else { return }
         state = .disconnecting
+        AppLog.add("Отключение")
         monitor?.cancel()
         monitor = nil
         _ = try? await Self.call(HelperRequest(command: .stop))
@@ -174,6 +182,7 @@ final class ConnectionManager {
             do {
                 try await client.select(selectedID)
                 connectedID = selectedID
+                AppLog.add("Сервер переключён без переподключения")
                 return
             } catch {
                 // Fall through to a reconnect.
@@ -223,6 +232,7 @@ final class ConnectionManager {
                         self.session = nil
                         self.connectedID = nil
                         self.state = .failed("Ядро VPN остановилось")
+                        AppLog.add("Ядро не отвечает 15 с, VPN выключен")
                         _ = try? await ConnectionManager.call(HelperRequest(command: .stop))
                         return
                     }

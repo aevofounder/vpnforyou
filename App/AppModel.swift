@@ -9,7 +9,7 @@ import VPNCore
 @Observable
 final class AppModel {
     enum Route {
-        case home, servers, add, speed, apps
+        case home, servers, add, speed, apps, palette
     }
 
     struct Selection {

@@ -7,6 +7,7 @@ struct MenuContentView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openSettings) private var openSettings
     @AppStorage(AppearanceKey.density) private var density: Density = .comfortable
+    @AppStorage(AppearanceKey.cards) private var cardsRaw = "ip,server,tiles"
 
     var body: some View {
         VStack(spacing: density.gap) {
@@ -20,9 +21,13 @@ struct MenuContentView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 StatusCard()
-                IPCard()
-                CurrentServerCard()
-                QuickTiles()
+                ForEach(CardLayout(cardsRaw).visibleCards) { card in
+                    switch card {
+                    case .ip: IPCard()
+                    case .server: CurrentServerCard()
+                    case .tiles: QuickTiles()
+                    }
+                }
                 footer
             case .servers:
                 ServersView()
@@ -32,6 +37,8 @@ struct MenuContentView: View {
                 SpeedTestView()
             case .apps:
                 AppsView()
+            case .palette:
+                CommandPaletteView()
             }
         }
         .padding(12)
@@ -44,6 +51,19 @@ struct MenuContentView: View {
         HStack(spacing: 8) {
             ConnectionPill()
             Spacer()
+            Button {
+                model.route = .palette
+            } label: {
+                Image(systemName: "command")
+                    .frame(width: 28, height: 28)
+                    .contentShape(Circle())
+            }
+            .glassButtonStyle()
+            .buttonBorderShape(.circle)
+            .foregroundStyle(Palette.ink2)
+            .keyboardShortcut("k")
+            .help("Быстрые действия ⌘K")
+            .accessibilityLabel("Быстрые действия")
             Button {
                 NSApp.activate()
                 openSettings()
@@ -327,8 +347,6 @@ private struct QuickTiles: View {
     @Environment(ConnectionManager.self) private var connection
     @Environment(RoutingStore.self) private var routing
     @Environment(InstalledApps.self) private var installed
-    @AppStorage(AppearanceKey.theme) private var theme: AppTheme = .system
-    @AppStorage(AppearanceKey.accent) private var accent: AccentColor = .blue
 
     var body: some View {
         HStack(spacing: 8) {
@@ -358,14 +376,7 @@ private struct QuickTiles: View {
     }
 
     private func openActivity() {
-        AuxWindow.show(id: "activity", title: "Активность", size: NSSize(width: 640, height: 480)) {
-            ActivityView()
-                .environment(connection)
-                .environment(routing)
-                .environment(installed)
-                .tint(accent.color)
-                .preferredColorScheme(theme.colorScheme)
-        }
+        ActivityWindow.open(connection: connection, routing: routing, installed: installed)
     }
 }
 
