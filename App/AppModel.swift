@@ -135,10 +135,10 @@ final class AppModel {
         UserDefaults.standard.set(id, forKey: Self.selectedKey)
     }
 
-    /// Keeps the selection valid: the first auto-select group, else the first server.
+    /// Keeps the selection valid: the first entry of the first profile (as listed in the subscription).
     private func ensureSelection() {
         if let selectedID, currentSelection != nil, !selectedID.isEmpty { return }
-        let first = profiles.lazy.compactMap { $0.groups.first?.id ?? $0.visibleServers.first?.id }.first
+        let first = profiles.lazy.compactMap { $0.entries.first?.id }.first
         if let first {
             select(first)
         } else {

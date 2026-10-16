@@ -110,6 +110,50 @@ final class XrayJSONParserTests: XCTestCase {
         XCTAssertEqual(hidden.map(\.name), ["Автовыбор · proxy-1"])
     }
 
+    /// The app lists entries like Incy: by the seller's names, in the subscription's order,
+    /// groups and single servers mixed.
+    func testEntriesKeepSubscriptionOrderAndNames() throws {
+        let configs: [[String: Any]] = [
+            ["remarks": "🚀 Автовыбор", "outbounds": [
+                vlessOutbound(host: "a.example.com", tag: "[AUTO] a-1"),
+                vlessOutbound(host: "b.example.com", tag: "[AUTO] b-1"), direct, block,
+            ]],
+            ["remarks": "🔥 Германия | WebSocket", "outbounds": [
+                vlessOutbound(host: "de.example.com", tag: "proxy", network: "ws",
+                              extra: ["wsSettings": ["path": "/fake"]]), direct,
+            ]],
+            ["remarks": "🇳🇱 Нидерланды \\TCP", "outbounds": [vlessOutbound(host: "nl.example.com", tag: "proxy"), direct]],
+            ["remarks": "🚀 AUTO-LTE", "outbounds": [
+                vlessOutbound(host: "c.example.com", tag: "[LTE] 1"),
+                vlessOutbound(host: "d.example.com", tag: "[LTE] 2"),
+            ]],
+        ]
+        let parsed = try XrayJSONParser.parse(Fake.json(configs))
+        var profile = Profile(name: "Example VPN", source: .subscription(url: "https://sub.example.com/fake-token"))
+        profile.apply(FetchedSubscription(parsed: parsed))
+
+        let titles = profile.entries.map { entry -> String in
+            switch entry {
+            case .group(let group): "group " + group.displayName
+            case .server(let server): server.displayName
+            }
+        }
+        XCTAssertEqual(titles, ["group 🚀 Автовыбор", "🔥 Германия | WebSocket", "Нидерланды \\TCP", "group 🚀 AUTO-LTE"])
+        XCTAssertEqual(profile.entries.compactMap { entry -> String? in
+            if case .server(let server) = entry { return server.countryCode }
+            return nil
+        }, ["DE", "NL"])
+        // Member tags never show up as rows of their own.
+        XCTAssertFalse(titles.contains { $0.contains("[AUTO]") || $0.contains("[LTE]") })
+    }
+
+    func testEntriesWithoutOrderPutGroupsFirst() throws {
+        let server = try ShareLinkParser.parse(Fake.vlessReality)
+        let group = ServerGroup(name: "Автовыбор", memberIDs: [server.id])
+        let profile = Profile(name: "Старый профиль", source: .manual, servers: [server], groups: [group])
+        XCTAssertEqual(profile.entries.map(\.id), [group.id, server.id])
+    }
+
     func testUnsupportedProtocolIsSkipped() throws {
         let trojan: [String: Any] = ["protocol": "trojan", "settings": ["servers": [["address": "t.example.com", "port": 443]]]]
         let parsed = try XrayJSONParser.parse(Fake.json([["remarks": "Trojan", "outbounds": [trojan, direct]]]))

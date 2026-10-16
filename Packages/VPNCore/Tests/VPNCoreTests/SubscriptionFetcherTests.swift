@@ -2,16 +2,20 @@ import XCTest
 @testable import VPNCore
 
 private final class StubHTTPClient: HTTPClient, @unchecked Sendable {
-    let response: HTTPResponse
-    private(set) var requestedHeaders: [String: String] = [:]
+    private let responses: [String: HTTPResponse]
+    private let fallback: HTTPResponse
+    private(set) var requestedAgents: [String] = []
 
-    init(response: HTTPResponse) {
-        self.response = response
+    /// One answer for every User-Agent, or different answers per User-Agent.
+    init(response: HTTPResponse, byAgent: [String: HTTPResponse] = [:]) {
+        fallback = response
+        responses = byAgent
     }
 
     func get(_ url: URL, headers: [String: String]) async throws -> HTTPResponse {
-        requestedHeaders = headers
-        return response
+        let agent = headers["User-Agent"] ?? ""
+        requestedAgents.append(agent)
+        return responses[agent] ?? fallback
     }
 }
 
@@ -31,7 +35,35 @@ final class SubscriptionFetcherTests: XCTestCase {
         XCTAssertEqual(fetched.usage?.total, 100)
         XCTAssertEqual(fetched.title, "Тестовый VPN")
         XCTAssertEqual(fetched.updateIntervalHours, 6)
-        XCTAssertEqual(client.requestedHeaders["User-Agent"], SubscriptionFetcher.defaultUserAgent)
+        XCTAssertEqual(client.requestedAgents, [SubscriptionFetcher.jsonUserAgent])
+    }
+
+    func testAsksAsJSONClientFirst() async throws {
+        let json = Fake.json([["remarks": "Германия | WebSocket", "outbounds": [[
+            "tag": "proxy", "protocol": "vless",
+            "settings": ["vnext": [["address": "de.example.com", "port": 443, "users": [["id": Fake.uuid]]]]],
+            "streamSettings": ["network": "tcp", "security": "tls", "tlsSettings": ["serverName": "de.example.com"]],
+        ]]]])
+        let links = Data(Fake.base64(Fake.vlessReality).utf8)
+        let client = StubHTTPClient(response: HTTPResponse(status: 200, headers: [:], body: links), byAgent: [
+            SubscriptionFetcher.jsonUserAgent: HTTPResponse(status: 200, headers: [:], body: json),
+        ])
+        let fetched = try await SubscriptionFetcher(client: client).fetch(url)
+        XCTAssertEqual(fetched.parsed.servers.map(\.name), ["Германия | WebSocket"])
+        XCTAssertEqual(client.requestedAgents, [SubscriptionFetcher.jsonUserAgent])
+    }
+
+    func testFallsBackToLinksWhenJSONAnswerIsUnusable() async throws {
+        let links = Data(Fake.base64(Fake.vlessReality).utf8)
+        for unusable in [HTTPResponse(status: 403, headers: [:], body: Data()),
+                         HTTPResponse(status: 200, headers: [:], body: Data("happ://crypt/fake".utf8))] {
+            let client = StubHTTPClient(response: HTTPResponse(status: 200, headers: [:], body: links), byAgent: [
+                SubscriptionFetcher.jsonUserAgent: unusable,
+            ])
+            let fetched = try await SubscriptionFetcher(client: client).fetch(url)
+            XCTAssertEqual(fetched.parsed.servers.count, 1)
+            XCTAssertEqual(client.requestedAgents, SubscriptionFetcher.defaultUserAgents)
+        }
     }
 
     func testFetchErrors() async {

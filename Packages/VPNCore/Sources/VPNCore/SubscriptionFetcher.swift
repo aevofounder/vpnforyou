@@ -66,21 +66,39 @@ public struct FetchedSubscription: Equatable, Sendable {
 }
 
 public struct SubscriptionFetcher: Sendable {
-    /// Many panels pick the response format by User-Agent. This one gets
-    /// a plain list of share links from most of them.
-    public static let defaultUserAgent = "v2rayN/7.13"
+    /// Panels (Remnawave, Marzban…) pick the response format by User-Agent.
+    /// Clients like Happ and Incy get Xray JSON: every entry keeps the
+    /// seller's name ("Автовыбор", "Германия | WebSocket"), balancers become
+    /// groups. v2rayN gets a plain list of links, where names are often
+    /// internal tags like "[AUTO] nl-1". Ask as a JSON client first and fall
+    /// back to the link list if that answer is unusable.
+    public static let jsonUserAgent = "Happ/3.10.0"
+    public static let linksUserAgent = "v2rayN/7.13"
+    public static let defaultUserAgents = [jsonUserAgent, linksUserAgent]
     public static let maxBodySize = 5 * 1024 * 1024
 
     private let client: HTTPClient
-    private let userAgent: String
+    private let userAgents: [String]
 
-    public init(client: HTTPClient = URLSessionHTTPClient(), userAgent: String = SubscriptionFetcher.defaultUserAgent) {
+    public init(client: HTTPClient = URLSessionHTTPClient(), userAgents: [String] = SubscriptionFetcher.defaultUserAgents) {
         self.client = client
-        self.userAgent = userAgent
+        self.userAgents = userAgents.isEmpty ? Self.defaultUserAgents : userAgents
     }
 
     public func fetch(_ urlString: String) async throws -> FetchedSubscription {
         guard let url = SubscriptionURL.validate(urlString) else { throw ImportError.invalidSubscriptionURL }
+        var lastError: Error = ImportError.emptySubscription
+        for userAgent in userAgents {
+            do {
+                return try await fetch(url, userAgent: userAgent)
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError
+    }
+
+    private func fetch(_ url: URL, userAgent: String) async throws -> FetchedSubscription {
         let response = try await client.get(url, headers: ["User-Agent": userAgent, "Accept": "*/*"])
         guard (200..<300).contains(response.status) else { throw ImportError.httpStatus(response.status) }
         guard response.body.count <= Self.maxBodySize else { throw ImportError.tooLarge }

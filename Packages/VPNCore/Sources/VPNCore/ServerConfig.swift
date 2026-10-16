@@ -230,11 +230,16 @@ public struct ParsedSubscription: Codable, Equatable, Sendable {
     public var servers: [ServerConfig]
     public var groups: [ServerGroup]
     public var skipped: [SkippedEntry]
+    /// Server and group ids in the order the subscription lists them, so the
+    /// app can show them the way the seller (and Incy) does. Nil: groups first.
+    public var order: [String]?
 
-    public init(servers: [ServerConfig] = [], groups: [ServerGroup] = [], skipped: [SkippedEntry] = []) {
+    public init(servers: [ServerConfig] = [], groups: [ServerGroup] = [], skipped: [SkippedEntry] = [],
+                order: [String]? = nil) {
         self.servers = servers
         self.groups = groups
         self.skipped = skipped
+        self.order = order
     }
 
     public var isEmpty: Bool { servers.isEmpty && groups.isEmpty }
@@ -254,11 +259,16 @@ public struct ParsedSubscription: Codable, Equatable, Sendable {
     }
 
     public mutating func merge(_ other: ParsedSubscription) {
+        let known = Set(servers.map(\.id) + groups.map(\.id))
         for server in other.servers { add(server) }
         for group in other.groups where !groups.contains(where: { $0.id == group.id }) {
             groups.append(group)
         }
         skipped.append(contentsOf: other.skipped)
+        if order != nil || other.order != nil {
+            let added = (other.order ?? other.groups.map(\.id) + other.servers.map(\.id)).filter { !known.contains($0) }
+            order = (order ?? groups.map(\.id).filter(known.contains) + servers.map(\.id).filter(known.contains)) + added
+        }
     }
 }
 

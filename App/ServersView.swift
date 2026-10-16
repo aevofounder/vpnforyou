@@ -109,7 +109,7 @@ struct ServersView: View {
 
     /// ScrollView needs an explicit height inside the menu bar window.
     private var listHeight: CGFloat {
-        let rows = model.profiles.reduce(0) { $0 + $1.visibleServers.count + $1.groups.count }
+        let rows = model.profiles.reduce(0) { $0 + $1.entries.count }
         let estimate = CGFloat(rows) * 50 + CGFloat(model.profiles.count) * 110
         return min(460, max(160, estimate))
     }
@@ -123,13 +123,12 @@ private struct ProfileSection: View {
     let profile: Profile
     let sortByPing: Bool
 
-    private var servers: [ServerConfig] {
-        guard sortByPing else { return profile.visibleServers }
-        var seen = Set<String>()
-        let ids = profile.visibleServers.map(\.id).filter { seen.insert($0).inserted }
-        let order = PingSort.byPing(ids, pings: diagnostics.pings)
-        let byID = Dictionary(profile.visibleServers.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        return order.compactMap { byID[$0] }
+    /// Rows in the subscription's order (as in Incy), or by ping.
+    private var entries: [Profile.Entry] {
+        let entries = profile.entries
+        guard sortByPing else { return entries }
+        let byID = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return PingSort.byPing(entries.map(\.id), pings: diagnostics.pings).compactMap { byID[$0] }
     }
 
     var body: some View {
@@ -146,26 +145,28 @@ private struct ProfileSection: View {
                 }
 
                 VStack(spacing: 6) {
-                    ForEach(profile.groups) { group in
-                        ServerRowButton(
-                            code: group.countryCode,
-                            title: group.displayName,
-                            subtitle: "Автовыбор · " + Format.plural(group.memberIDs.count, "сервер", "сервера", "серверов"),
-                            isGroup: true,
-                            isSelected: model.selectedID == group.id,
-                            ping: diagnostics.pings[group.id]
-                        ) { choose(group.id) }
-                    }
-                    ForEach(servers) { server in
-                        ServerRowButton(
-                            code: server.countryCode,
-                            title: server.displayName,
-                            subtitle: server.summary,
-                            isGroup: false,
-                            isSelected: model.selectedID == server.id,
-                            ping: diagnostics.pings[server.id],
-                            pingFailed: diagnostics.pingFailed.contains(server.id)
-                        ) { choose(server.id) }
+                    ForEach(entries) { entry in
+                        switch entry {
+                        case .group(let group):
+                            ServerRowButton(
+                                code: group.countryCode,
+                                title: group.displayName,
+                                subtitle: "Автовыбор · " + Format.plural(group.memberIDs.count, "сервер", "сервера", "серверов"),
+                                isGroup: true,
+                                isSelected: model.selectedID == group.id,
+                                ping: diagnostics.pings[group.id]
+                            ) { choose(group.id) }
+                        case .server(let server):
+                            ServerRowButton(
+                                code: server.countryCode,
+                                title: server.displayName,
+                                subtitle: server.summary,
+                                isGroup: false,
+                                isSelected: model.selectedID == server.id,
+                                ping: diagnostics.pings[server.id],
+                                pingFailed: diagnostics.pingFailed.contains(server.id)
+                            ) { choose(server.id) }
+                        }
                     }
                 }
 

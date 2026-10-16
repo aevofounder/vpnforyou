@@ -17,6 +17,8 @@ public struct Profile: Codable, Equatable, Identifiable, Sendable {
     public var usage: SubscriptionUsage?
     public var updatedAt: Date?
     public var updateIntervalHours: Int?
+    /// Ids in the subscription's own order; nil for profiles saved before it existed.
+    public var order: [String]?
 
     public init(
         id: UUID = UUID(),
@@ -27,7 +29,8 @@ public struct Profile: Codable, Equatable, Identifiable, Sendable {
         skipped: [SkippedEntry] = [],
         usage: SubscriptionUsage? = nil,
         updatedAt: Date? = nil,
-        updateIntervalHours: Int? = nil
+        updateIntervalHours: Int? = nil,
+        order: [String]? = nil
     ) {
         self.id = id
         self.name = name
@@ -38,6 +41,7 @@ public struct Profile: Codable, Equatable, Identifiable, Sendable {
         self.usage = usage
         self.updatedAt = updatedAt
         self.updateIntervalHours = updateIntervalHours
+        self.order = order
     }
 
     public var subscriptionURL: String? {
@@ -52,6 +56,41 @@ public struct Profile: Codable, Equatable, Identifiable, Sendable {
 
     public func server(id: String) -> ServerConfig? {
         servers.first { $0.id == id }
+    }
+
+    /// One row of the server list: an auto-select group or a server.
+    public enum Entry: Identifiable, Equatable, Sendable {
+        case group(ServerGroup)
+        case server(ServerConfig)
+
+        public var id: String {
+            switch self {
+            case .group(let group): group.id
+            case .server(let server): server.id
+            }
+        }
+    }
+
+    /// Groups and visible servers in the subscription's order (as in Incy);
+    /// anything missing from that order follows, groups first.
+    public var entries: [Entry] {
+        let visible = visibleServers
+        let groupByID = Dictionary(groups.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let serverByID = Dictionary(visible.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var seen = Set<String>()
+        var result: [Entry] = []
+        for id in order ?? [] where !seen.contains(id) {
+            if let group = groupByID[id] {
+                result.append(.group(group))
+                seen.insert(id)
+            } else if let server = serverByID[id] {
+                result.append(.server(server))
+                seen.insert(id)
+            }
+        }
+        for group in groups where seen.insert(group.id).inserted { result.append(.group(group)) }
+        for server in visible where seen.insert(server.id).inserted { result.append(.server(server)) }
+        return result
     }
 
     /// Whether a subscription is due for a refresh.
@@ -70,15 +109,17 @@ public struct Profile: Codable, Equatable, Identifiable, Sendable {
         usage = fetched.usage
         updatedAt = now
         updateIntervalHours = fetched.updateIntervalHours
+        order = fetched.parsed.order
         if let title = fetched.title { name = title }
     }
 
     /// Adds hand-pasted servers, keeping existing ones.
     public mutating func merge(_ parsed: ParsedSubscription, now: Date = Date()) {
-        var combined = ParsedSubscription(servers: servers, groups: groups)
+        var combined = ParsedSubscription(servers: servers, groups: groups, order: order)
         combined.merge(parsed)
         servers = combined.servers
         groups = combined.groups
+        order = combined.order
         skipped = parsed.skipped
         updatedAt = now
     }

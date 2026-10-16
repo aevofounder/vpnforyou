@@ -21,7 +21,8 @@ public enum XrayJSONParser {
         // Pass 2: several outbounds — groups; their members stay hidden
         // unless the same server is also listed on its own.
         var result = ParsedSubscription()
-        var multi: [(name: String, outbounds: [[String: Any]])] = []
+        var multi: [(index: Int, name: String, outbounds: [[String: Any]])] = []
+        var positions: [(index: Int, id: String)] = []
 
         for (index, config) in configs.enumerated() {
             let name = (config["remarks"] as? String).nonEmpty ?? "Сервер \(index + 1)"
@@ -36,16 +37,16 @@ public enum XrayJSONParser {
             }
             if outbounds.count == 1 {
                 do {
-                    result.add(try server(from: outbounds[0], name: name, hidden: false))
+                    positions.append((index, result.add(try server(from: outbounds[0], name: name, hidden: false))))
                 } catch let error as ImportError {
                     result.skipped.append(SkippedEntry(name: name, reason: error.message))
                 }
             } else if outbounds.count > 1 {
-                multi.append((name, outbounds))
+                multi.append((index, name, outbounds))
             }
         }
 
-        for (name, outbounds) in multi {
+        for (configIndex, name, outbounds) in multi {
             var memberIDs: [String] = []
             for (index, outbound) in outbounds.enumerated() {
                 let memberName = "\(name) · \((outbound["tag"] as? String).nonEmpty ?? String(index + 1))"
@@ -57,9 +58,16 @@ public enum XrayJSONParser {
                 }
             }
             if !memberIDs.isEmpty {
-                result.groups.append(ServerGroup(name: name, memberIDs: memberIDs))
+                let group = ServerGroup(name: name, memberIDs: memberIDs)
+                if !result.groups.contains(where: { $0.id == group.id }) {
+                    result.groups.append(group)
+                    positions.append((configIndex, group.id))
+                }
             }
         }
+        // Entries in the order of the configs, the way Incy lists them.
+        var seen = Set<String>()
+        result.order = positions.sorted { $0.index < $1.index }.map(\.id).filter { seen.insert($0).inserted }
         return result
     }
 

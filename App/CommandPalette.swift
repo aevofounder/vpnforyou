@@ -177,21 +177,21 @@ struct CommandPaletteView: View {
     }
 
     private var servers: [Command] {
-        var list: [Command] = []
-        for group in model.allGroups {
-            list.append(Command(id: "server:\(group.id)", title: group.displayName, subtitle: "Автовыбор",
-                                icon: "bolt.fill", keywords: (group.countryCode ?? "") + " авто сервер") {
-                choose(group.id)
-            })
+        model.profiles.flatMap(\.entries).map { entry -> Command in
+            switch entry {
+            case .group(let group):
+                Command(id: "server:\(group.id)", title: group.displayName, subtitle: "Автовыбор",
+                        icon: "bolt.fill", keywords: (group.countryCode ?? "") + " авто сервер") {
+                    choose(group.id)
+                }
+            case .server(let server):
+                Command(id: "server:\(server.id)", title: server.displayName,
+                        subtitle: server.summary + (diagnostics.pings[server.id].map { " · \($0) мс" } ?? ""),
+                        icon: "globe", keywords: (server.countryCode ?? "") + " сервер") {
+                    choose(server.id)
+                }
+            }
         }
-        for server in model.allServers {
-            let ping = diagnostics.pings[server.id].map { " · \($0) мс" } ?? ""
-            list.append(Command(id: "server:\(server.id)", title: server.displayName, subtitle: server.summary + ping,
-                                icon: "globe", keywords: (server.countryCode ?? "") + " сервер") {
-                choose(server.id)
-            })
-        }
-        return list
     }
 
     private var apps: [Command] {
