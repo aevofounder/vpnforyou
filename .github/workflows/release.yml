@@ -60,9 +60,11 @@ jobs:
       - name: Build app (universal, ad-hoc signed)
         env:
           VERSION: ${{ steps.version.outputs.version }}
-          BUILD_NUMBER: ${{ github.run_number }}
+          SPARKLE_PUBLIC_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
         run: |
           set -o pipefail
+          # Same build numbering as build-macos.yml: the commit time.
+          BUILD_NUMBER="$(git log -1 --format=%ct)"
           xcodebuild \
             -project VPNforYou.xcodeproj \
             -scheme VPNforYou \
@@ -71,6 +73,7 @@ jobs:
             -derivedDataPath build/DerivedData \
             MARKETING_VERSION="$VERSION" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            SPARKLE_PUBLIC_KEY="$SPARKLE_PUBLIC_KEY" \
             build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" \
             || { echo "::group::Compiler errors"; grep -E ": error:" "$RUNNER_TEMP/xcodebuild.log" | sort -u; echo "::endgroup::"; exit 1; }
 

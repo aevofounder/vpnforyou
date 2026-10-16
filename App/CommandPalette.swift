@@ -167,6 +167,11 @@ struct CommandPaletteView: View {
                 model.route = .home
                 Task { await DiagnosticReport.copy(model: model, connection: connection, routing: routing) }
             },
+            Command(id: "updates", title: "Проверить обновления", subtitle: "Версия \(Bundle.main.appVersion), \(Bundle.main.buildDescription)",
+                    icon: "arrow.down.circle", keywords: "обновление update версия") {
+                model.route = .home
+                Updater.shared.checkForUpdates()
+            },
             Command(id: "settings", title: "Настройки", icon: "gearshape", keywords: "settings параметры") {
                 model.route = .home
                 NSApp.activate()

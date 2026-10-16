@@ -14,11 +14,19 @@ settings:
   base:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
+    # Public half of the update signing key (Ed25519, base64). CI passes it
+    # from the repository variable SPARKLE_PUBLIC_KEY; empty = no updates.
+    SPARKLE_PUBLIC_KEY: ""
     SWIFT_VERSION: "5.0"
 
 packages:
   VPNCore:
     path: Packages/VPNCore
+  # Auto-updates. Pinned to the commit of tag 2.9.6; SwiftPM also checks
+  # the binary's checksum from that commit's Package.swift.
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    revision: ac2def288cbff5cfc7df3ffef6abdf45b72bcb0a
 
 targets:
   VPNforYou:
@@ -31,6 +39,7 @@ targets:
         product: VPNCore
       - package: VPNCore
         product: VPNHelperCore
+      - package: Sparkle
     info:
       path: App/Info.plist
       properties:
@@ -38,6 +47,12 @@ targets:
         CFBundleLocalizations: [ru]
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Beta channel: CI publishes a signed build after every merge to main.
+        SUFeedURL: https://github.com/aevofounder/vpnforyou/releases/download/beta/appcast.xml
+        SUPublicEDKey: $(SPARKLE_PUBLIC_KEY)
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 21600
+        SUAllowsAutomaticUpdates: true
     settings:
       base:
         PRODUCT_NAME: VPNforYou

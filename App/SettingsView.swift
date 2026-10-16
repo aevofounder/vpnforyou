@@ -24,6 +24,7 @@ struct GeneralSettingsView: View {
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var loginError: String?
     @State private var copied = false
+    @State private var autoUpdates = Updater.shared.checksAutomatically
 
     var body: some View {
         Form {
@@ -56,6 +57,34 @@ struct GeneralSettingsView: View {
                     Text("Включает и выключает VPN из любой программы")
                 }
                 .onChange(of: hotKey) { GlobalHotKey.shared.apply() }
+            }
+
+            Section {
+                LabeledContent("Версия") {
+                    Text("\(Bundle.main.appVersion), \(Bundle.main.buildDescription)")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                if Updater.shared.isConfigured {
+                    Toggle("Проверять обновления автоматически", isOn: Binding(
+                        get: { autoUpdates },
+                        set: { value in
+                            Updater.shared.checksAutomatically = value
+                            autoUpdates = value
+                        }
+                    ))
+                    Button("Проверить обновления") { Updater.shared.checkForUpdates() }
+                } else {
+                    Text("Эта сборка не обновляется сама: обновления приходят в сборки из бета-канала.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Обновления")
+            } footer: {
+                Text("Бета-версии выходят после каждого изменения в main. Каждое обновление подписано: приложение ставит только версии, подписанные ключом проекта.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section {

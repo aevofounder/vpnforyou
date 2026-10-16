@@ -27,12 +27,15 @@ struct VPNforYouApp: App {
             Task { await VPNActions.toggle(model: model, connection: connection, routing: routing) }
         }
         GlobalHotKey.shared.apply()
-        if UserDefaults.standard.bool(forKey: Self.autoConnectKey) {
+        Updater.shared.isVPNConnected = { [weak connection] in connection?.state.isConnected ?? false }
+        Updater.shared.start()
+        let reconnect = Updater.takeReconnectFlag()
+        if reconnect || UserDefaults.standard.bool(forKey: Self.autoConnectKey) {
             Task {
                 // Give the helper check in ConnectionManager.init a moment first.
                 try? await Task.sleep(for: .seconds(2))
                 guard connection.state == .disconnected else { return }
-                AppLog.add("Автоподключение при запуске")
+                AppLog.add(reconnect ? "Переподключение после обновления" : "Автоподключение при запуске")
                 await VPNActions.connect(model: model, connection: connection, routing: routing)
             }
         }

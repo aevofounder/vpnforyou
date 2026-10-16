@@ -488,4 +488,15 @@ extension Bundle {
     var appVersion: String {
         (infoDictionary?["CFBundleShortVersionString"] as? String) ?? "—"
     }
+
+    var buildNumber: String {
+        (infoDictionary?["CFBundleVersion"] as? String) ?? "—"
+    }
+
+    /// CI builds are numbered by commit time: "сборка от 16.10.2026 07:14".
+    var buildDescription: String {
+        guard let seconds = TimeInterval(buildNumber), seconds > 1_000_000_000 else { return "сборка \(buildNumber)" }
+        let date = Date(timeIntervalSince1970: seconds)
+        return "сборка от " + date.formatted(.dateTime.day(.twoDigits).month(.twoDigits).year().hour().minute())
+    }
 }
