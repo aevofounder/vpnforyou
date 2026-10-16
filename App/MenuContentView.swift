@@ -2,17 +2,44 @@ import AppKit
 import SwiftUI
 
 /// The window that opens from the menu bar icon (see docs/DESIGN.md).
-/// For now it is a skeleton: connecting and servers arrive in later stages.
+/// Simple in-window navigation: home, servers, add keys.
 struct MenuContentView: View {
+    @Environment(AppModel.self) private var model
     @Environment(\.openSettings) private var openSettings
     @AppStorage(AppearanceKey.density) private var density: Density = .comfortable
+    @AppStorage(AppearanceKey.cards) private var cardsRaw = "ip,server,tiles"
 
     var body: some View {
         VStack(spacing: density.gap) {
-            header
-            StatusCard()
-            ServersCard()
-            footer
+            switch model.route {
+            case .home:
+                header
+                if let error = model.storageError {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.warn)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                StatusCard()
+                ForEach(CardLayout(cardsRaw).visibleCards) { card in
+                    switch card {
+                    case .ip: IPCard()
+                    case .server: CurrentServerCard()
+                    case .tiles: QuickTiles()
+                    }
+                }
+                footer
+            case .servers:
+                ServersView()
+            case .add:
+                AddKeysView()
+            case .speed:
+                SpeedTestView()
+            case .apps:
+                AppsView()
+            case .palette:
+                CommandPaletteView()
+            }
         }
         .padding(12)
         .frame(width: 360)
@@ -22,8 +49,21 @@ struct MenuContentView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            StatusPill(text: "VPN выключен", isOn: false)
+            ConnectionPill()
             Spacer()
+            Button {
+                model.route = .palette
+            } label: {
+                Image(systemName: "command")
+                    .frame(width: 28, height: 28)
+                    .contentShape(Circle())
+            }
+            .glassButtonStyle()
+            .buttonBorderShape(.circle)
+            .foregroundStyle(Palette.ink2)
+            .keyboardShortcut("k")
+            .help("Быстрые действия ⌘K")
+            .accessibilityLabel("Быстрые действия")
             Button {
                 NSApp.activate()
                 openSettings()
@@ -58,43 +98,332 @@ struct MenuContentView: View {
     }
 }
 
+/// "VPN выключен" → "Подключение…" → "NL · 00:12:41", like the Dynamic Island.
+private struct ConnectionPill: View {
+    @Environment(AppModel.self) private var model
+    @Environment(ConnectionManager.self) private var connection
+
+    var body: some View {
+        switch connection.state {
+        case .connected(let since):
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                StatusPill(text: connectedText(since: since, now: context.date), isOn: true)
+            }
+        case .connecting:
+            StatusPill(text: "Подключение…", isOn: false)
+        case .disconnecting:
+            StatusPill(text: "Отключение…", isOn: false)
+        case .failed:
+            StatusPill(text: "Ошибка подключения", isOn: false)
+        case .disconnected:
+            StatusPill(text: "VPN выключен", isOn: false)
+        }
+    }
+
+    private func connectedText(since: Date, now: Date) -> String {
+        let seconds = max(0, Int(now.timeIntervalSince(since)))
+        let clock = String(format: "%02d:%02d:%02d", seconds / 3_600, seconds / 60 % 60, seconds % 60)
+        let code = connection.connectedID.flatMap { model.label(for: $0)?.code } ?? "VPN"
+        return "\(code) · \(clock)"
+    }
+}
+
 private struct StatusCard: View {
+    @Environment(AppModel.self) private var model
+    @Environment(ConnectionManager.self) private var connection
+    @Environment(RoutingStore.self) private var routing
+    @AppStorage(AppearanceKey.accent) private var accent: AccentColor = .blue
+
     var body: some View {
         Card {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(Palette.track)
-                            .frame(width: 8, height: 8)
-                        Text("Выключено")
-                            .font(.system(size: 20, weight: .semibold))
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(dotColor)
+                                .frame(width: 8, height: 8)
+                            Text(title)
+                                .font(.system(size: 20, weight: .semibold))
+                        }
+                        Text(subtitle)
+                            .font(.system(size: 12))
+                            .foregroundStyle(isFailed ? Palette.warn : Palette.ink2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    Text("Подключение появится в следующих версиях")
-                        .foregroundStyle(Palette.ink2)
+                    Spacer(minLength: 12)
+                    if connection.state.isBusy {
+                        ProgressView().controlSize(.small)
+                    }
+                    Toggle("VPN", isOn: toggleBinding)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                        .controlSize(.large)
+                        .disabled(!canToggle)
                 }
-                Spacer(minLength: 12)
-                Toggle("VPN", isOn: .constant(false))
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                    .controlSize(.large)
-                    .disabled(true)
+                if needsHelper {
+                    HelperInstallRow()
+                }
+                if connection.state.isConnected {
+                    TrafficStrip()
+                }
+            }
+        }
+    }
+
+    private var toggleBinding: Binding<Bool> {
+        Binding(
+            get: { connection.state.isConnected || connection.state == .connecting },
+            set: { _ in
+                Task { await VPNActions.toggle(model: model, connection: connection, routing: routing) }
+            }
+        )
+    }
+
+    private var needsHelper: Bool {
+        [.notInstalled, .outdated, .installing].contains(connection.helperState)
+    }
+
+    private var canToggle: Bool {
+        model.connectionParts() != nil && !connection.state.isBusy && !needsHelper
+    }
+
+    private var isFailed: Bool {
+        if case .failed = connection.state { return true }
+        return false
+    }
+
+    private var dotColor: Color {
+        switch connection.state {
+        case .connected: accent.color
+        case .connecting, .disconnecting: Palette.warn
+        default: Palette.track
+        }
+    }
+
+    private var title: String {
+        switch connection.state {
+        case .connected: "Защищено"
+        case .connecting: "Подключение…"
+        case .disconnecting: "Отключение…"
+        case .failed: "Не подключено"
+        case .disconnected: "Выключено"
+        }
+    }
+
+    private var subtitle: String {
+        switch connection.state {
+        case .connected:
+            switch routing.mode {
+            case .all: return "Весь трафик идёт через VPN"
+            case .onlySelected: return "Через VPN идут выбранные программы"
+            case .allExceptSelected: return "Через VPN всё, кроме выбранных программ"
+            }
+        case .failed(let message):
+            return message
+        case .connecting:
+            return model.currentSelection?.title ?? ""
+        default:
+            return model.connectionParts() == nil ? "Добавьте ключ или подписку" : "Весь трафик идёт напрямую"
+        }
+    }
+}
+
+/// One-time installation of the privileged helper.
+private struct HelperInstallRow: View {
+    @Environment(ConnectionManager.self) private var connection
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Divider()
+            Text(connection.helperState == .outdated
+                 ? "Помощник устарел: обновите его, чтобы подключаться."
+                 : "Для подключения нужен помощник. Он ставится один раз, macOS спросит пароль администратора.")
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.ink2)
+                .fixedSize(horizontal: false, vertical: true)
+            if let error = connection.lastError {
+                Text(error)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.warn)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Button {
+                Task { await connection.installHelper() }
+            } label: {
+                if connection.helperState == .installing {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Text(connection.helperState == .outdated ? "Обновить помощника" : "Установить помощника")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(connection.helperState == .installing)
+        }
+    }
+}
+
+/// The selected server, or an invitation to add keys.
+private struct CurrentServerCard: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Card {
+            if let current = model.currentSelection {
+                VStack(alignment: .leading, spacing: 8) {
+                    Button {
+                        model.route = .servers
+                    } label: {
+                        HStack(spacing: 10) {
+                            if current.isGroup {
+                                Image(systemName: "bolt.fill")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 28, height: 20)
+                                    .background(.tint, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            } else {
+                                CountryChip(code: current.code)
+                            }
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(current.title)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .lineLimit(1)
+                                Text(current.subtitle)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Palette.ink3)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Palette.ink3)
+                        }
+                        .frame(minHeight: 40)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Открыть список серверов")
+
+                    if let usage = current.usage {
+                        Divider()
+                        UsageView(usage: usage)
+                    }
+                }
+            } else if model.hasServers {
+                Button {
+                    model.route = .servers
+                } label: {
+                    HStack {
+                        Text("Выберите сервер")
+                            .font(.system(size: 13, weight: .medium))
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(Palette.ink3)
+                    }
+                    .frame(minHeight: 40)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionLabel("СЕРВЕРЫ")
+                    Text("Пока пусто")
+                        .font(.system(size: 13, weight: .medium))
+                    Text("Вставьте ссылку на подписку от продавца VPN или ключи vless:// и hysteria2://.")
+                        .foregroundStyle(Palette.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Добавить ключ или подписку") { model.route = .add }
+                        .buttonStyle(.borderedProminent)
+                }
             }
         }
     }
 }
 
-private struct ServersCard: View {
+/// Shortcuts to the other screens as small tiles, like Control Center.
+private struct QuickTiles: View {
+    @Environment(AppModel.self) private var model
+    @Environment(Diagnostics.self) private var diagnostics
+    @Environment(ConnectionManager.self) private var connection
+    @Environment(RoutingStore.self) private var routing
+    @Environment(InstalledApps.self) private var installed
+
     var body: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 6) {
-                SectionLabel("СЕРВЕРЫ")
-                Text("Пока пусто")
-                    .font(.system(size: 13, weight: .medium))
-                Text("Импорт ключей и подписок появится в следующей версии.")
-                    .foregroundStyle(Palette.ink2)
+        HStack(spacing: 8) {
+            QuickTile(icon: "speedometer", title: "Скорость", subtitle: speedSubtitle) {
+                model.route = .speed
+            }
+            QuickTile(icon: "square.grid.2x2", title: "Программы", subtitle: appsSubtitle) {
+                model.route = .apps
+            }
+            QuickTile(icon: "waveform.path.ecg", title: "Активность", subtitle: "Кто в сети") {
+                openActivity()
             }
         }
+    }
+
+    private var speedSubtitle: String {
+        guard let last = diagnostics.speedHistory.first, let down = last.downloadMbps else { return "Проверить" }
+        return "↓ \(Format.mbps(down))"
+    }
+
+    private var appsSubtitle: String {
+        switch routing.mode {
+        case .all: "Все через VPN"
+        case .onlySelected: "Только \(routing.paths.count)"
+        case .allExceptSelected: "Кроме \(routing.paths.count)"
+        }
+    }
+
+    private func openActivity() {
+        ActivityWindow.open(connection: connection, routing: routing, installed: installed)
+    }
+}
+
+struct QuickTile: View {
+    @AppStorage(AppearanceKey.material) private var material: WindowMaterial = .glass
+    let icon: String
+    let title: String
+    let subtitle: String
+    let action: () -> Void
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.tint)
+                    .frame(width: 26, height: 26)
+                    .background(Palette.surface2.opacity(0.8), in: Circle())
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                    Text(subtitle)
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(Palette.ink3)
+                        .lineLimit(1)
+                }
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(material == .solid ? Palette.surface : Palette.glassFill, in: shape)
+            .overlay(shape.strokeBorder(material == .solid ? Palette.line : Palette.glassEdge))
+            .contentShape(shape)
+        }
+        .buttonStyle(PressableStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// Scales down a little on press so the tile feels like it heard the click.
+struct PressableStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -158,5 +487,16 @@ struct SectionLabel: View {
 extension Bundle {
     var appVersion: String {
         (infoDictionary?["CFBundleShortVersionString"] as? String) ?? "—"
+    }
+
+    var buildNumber: String {
+        (infoDictionary?["CFBundleVersion"] as? String) ?? "—"
+    }
+
+    /// CI builds are numbered by commit time: "сборка от 16.10.2026 07:14".
+    var buildDescription: String {
+        guard let seconds = TimeInterval(buildNumber), seconds > 1_000_000_000 else { return "сборка \(buildNumber)" }
+        let date = Date(timeIntervalSince1970: seconds)
+        return "сборка от " + date.formatted(.dateTime.day(.twoDigits).month(.twoDigits).year().hour().minute())
     }
 }

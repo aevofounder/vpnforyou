@@ -3,13 +3,16 @@ name: Build macOS
 on:
   push:
   pull_request:
+  # "Run workflow" on main publishes a beta right away (e.g. after adding the keys).
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
   group: build-macos-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel a main build halfway through publishing the beta.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   build:
@@ -27,7 +30,9 @@ jobs:
           xcodebuild -version
           swift --version
 
-      - name: Test VPNCore
+      - name: Test VPNCore and the helper
+        env:
+          MIHOMO_CHECK_DIR: ${{ runner.temp }}/mihomo-check
         run: swift test --package-path Packages/VPNCore
 
       - name: Install XcodeGen (pinned version, verified checksum)
@@ -45,23 +50,57 @@ jobs:
         run: '"$RUNNER_TEMP/xcodegen/bin/xcodegen" generate'
 
       - name: Build app (universal, ad-hoc signed)
+        env:
+          # Public half of the update key: a repository variable, not a secret.
+          SPARKLE_PUBLIC_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
         run: |
+          set -o pipefail
+          if [ -n "$SPARKLE_PUBLIC_KEY" ] && [[ ! "$SPARKLE_PUBLIC_KEY" =~ ^[A-Za-z0-9+/]{43}=$ ]]; then
+            echo "SPARKLE_PUBLIC_KEY must be a base64 Ed25519 public key (44 characters)" >&2
+            exit 1
+          fi
+          # Build number = commit time: grows with every merge to main, the same in every workflow.
+          BUILD_NUMBER="$(git log -1 --format=%ct)"
           xcodebuild \
             -project VPNforYou.xcodeproj \
             -scheme VPNforYou \
             -configuration Release \
             -destination 'generic/platform=macOS' \
             -derivedDataPath build/DerivedData \
-            build
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            SPARKLE_PUBLIC_KEY="$SPARKLE_PUBLIC_KEY" \
+            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" \
+            || { echo "::group::Compiler errors"; grep -E ": error:" "$RUNNER_TEMP/xcodebuild.log" | sort -u; echo "::endgroup::"; exit 1; }
+
+      - name: Add helper and mihomo core
+        run: scripts/bundle-extras.sh "build/DerivedData/Build/Products/Release/VPNforYou.app"
+
+      - name: Check generated configs with mihomo -t
+        run: |
+          CORE="build/DerivedData/Build/Products/Release/VPNforYou.app/Contents/MacOS/mihomo"
+          "$CORE" -v
+          for dir in "$RUNNER_TEMP"/mihomo-check/*/; do
+            "$CORE" -t -d "$dir" -f "$dir/config.json"
+          done
 
       - name: Verify and package
         run: |
           APP="build/DerivedData/Build/Products/Release/VPNforYou.app"
           codesign --verify --deep --strict --verbose=2 "$APP"
           lipo -info "$APP/Contents/MacOS/VPNforYou"
+          # The app never talks plain http (the core's API is reachable only through the helper).
+          if plutil -extract NSAppTransportSecurity xml1 -o /dev/null "$APP/Contents/Info.plist" 2>/dev/null; then
+            echo "Info.plist must not carry an ATS exception" >&2
+            exit 1
+          fi
+          plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist"
           mkdir -p dist
           ditto -c -k --keepParent "$APP" dist/VPNforYou.zip
           shasum -a 256 dist/VPNforYou.zip | tee dist/VPNforYou.zip.sha256
+
+      # The release workflow runs only on tags; this keeps its .dmg step tested.
+      - name: Check the release disk image
+        run: scripts/make-dmg.sh "build/DerivedData/Build/Products/Release/VPNforYou.app" 0.0.0-ci "$RUNNER_TEMP/dmg-check"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -69,3 +108,111 @@ jobs:
           archive: false
           if-no-files-found: error
           retention-days: 14
+
+      # For the publish job below (zipped, so download-artifact v8.0.1 can read it).
+      - if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: beta-app
+          path: dist/VPNforYou.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  # Beta channel: after every merge to main, sign the build with the update
+  # key and publish it in the "beta" release with an appcast for Sparkle.
+  # Without the key (docs/UPDATES.md) this job only leaves a notice.
+  publish-beta:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 20
+    # The signing key lives in the "beta" environment, open to main only:
+    # a workflow edited on another branch cannot read it.
+    environment: beta
+    permissions:
+      contents: write # upload to the beta release and move its tag
+    concurrency:
+      group: publish-beta
+      cancel-in-progress: false
+    steps:
+      - name: Check the update keys
+        id: keys
+        env:
+          PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          PUBLIC_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
+        run: |
+          if [ -z "$PRIVATE_KEY" ] || [ -z "$PUBLIC_KEY" ]; then
+            echo "::notice::Бета-канал не настроен: нужны секрет SPARKLE_PRIVATE_KEY в окружении beta и переменная SPARKLE_PUBLIC_KEY (docs/UPDATES.md)."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.keys.outputs.ready == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - if: steps.keys.outputs.ready == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: beta-app
+          path: dist
+
+      - name: Get Sparkle's sign_update (same pinned commit as the app)
+        if: steps.keys.outputs.ready == 'true'
+        run: |
+          TOOLS="$RUNNER_TEMP/sparkle-tools"
+          mkdir -p "$TOOLS/Sources/Tools"
+          cat > "$TOOLS/Package.swift" <<'SWIFT'
+          // swift-tools-version:5.9
+          import PackageDescription
+          let package = Package(
+              name: "SparkleTools",
+              platforms: [.macOS(.v14)],
+              dependencies: [
+                  .package(url: "https://github.com/sparkle-project/Sparkle", revision: "ac2def288cbff5cfc7df3ffef6abdf45b72bcb0a"),
+              ],
+              targets: [.target(name: "Tools", dependencies: [.product(name: "Sparkle", package: "Sparkle")])]
+          )
+          SWIFT
+          echo "import Sparkle" > "$TOOLS/Sources/Tools/Tools.swift"
+          swift build --package-path "$TOOLS"
+          SIGN="$(find "$TOOLS/.build/artifacts" -path '*/bin/sign_update' -type f | head -1)"
+          test -x "$SIGN"
+          echo "SIGN_UPDATE=$SIGN" >> "$GITHUB_ENV"
+
+      - name: Sign the update and write the appcast
+        if: steps.keys.outputs.ready == 'true'
+        env:
+          PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          KEY_FILE="$(mktemp "$RUNNER_TEMP/key.XXXXXX")"
+          chmod 600 "$KEY_FILE"
+          printf '%s' "$PRIVATE_KEY" > "$KEY_FILE"
+          SIGNATURE="$("$SIGN_UPDATE" --ed-key-file "$KEY_FILE" dist/VPNforYou.zip)"
+          rm -f "$KEY_FILE"
+          scripts/make-appcast.sh dist/VPNforYou.zip "$SIGNATURE" "$GITHUB_REPOSITORY" dist
+
+      - name: Publish to the beta release
+        if: steps.keys.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=beta
+          NOTES="Бета-версия, собранная из main ($GITHUB_SHA). Приложение ставит её само через «Проверить обновления»."
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" -f sha="$GITHUB_SHA" -F force=true >/dev/null
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease --notes "$NOTES"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
+              --title "VPNforYou бета" --notes "$NOTES"
+          fi
+          # The archive first, then the appcast that points to it.
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/VPNforYou-*.zip
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/appcast.xml
+          # Keep the three newest archives.
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
+            | grep -E '^VPNforYou-[0-9]+\.zip$' | sort -t- -k2 -n \
+            | awk '{ names[NR] = $0 } END { for (i = 1; i <= NR - 3; i++) print names[i] }' \
+            | while read -r old; do gh release delete-asset "$TAG" "$old" --repo "$GITHUB_REPOSITORY" --yes; done

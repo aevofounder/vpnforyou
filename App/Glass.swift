@@ -56,13 +56,36 @@ extension View {
         modifier(GlassCapsule(tint: tint))
     }
 
-    /// `.glass` button style on macOS 26, plain borderless button before that.
+    /// Neutral round (or capsule) button: Liquid Glass on macOS 26, the thin
+    /// system material before that, a light solid chip for the solid material.
+    /// The accent color stays for state (the switch, the selected server),
+    /// not for every toolbar button.
+    func glassButtonStyle(capsule: Bool = false) -> some View {
+        buttonStyle(.plain).modifier(GlassButtonBackground(capsule: capsule))
+    }
+}
+
+struct GlassButtonBackground: ViewModifier {
+    @AppStorage(AppearanceKey.material) private var material: WindowMaterial = .glass
+    let capsule: Bool
+
     @ViewBuilder
-    func glassButtonStyle() -> some View {
-        if #available(macOS 26.0, *) {
-            buttonStyle(.glass)
+    func body(content: Content) -> some View {
+        let label = content
+            .foregroundStyle(Palette.ink2)
+            .padding(.horizontal, capsule ? 12 : 0)
+            .frame(minHeight: capsule ? 28 : nil)
+        let shape = capsule ? AnyShape(Capsule()) : AnyShape(Circle())
+        if material == .solid {
+            label
+                .background(Palette.surface, in: shape)
+                .overlay(shape.stroke(Palette.line))
+        } else if #available(macOS 26.0, *) {
+            label.glassEffect(.regular, in: shape)
         } else {
-            buttonStyle(.plain)
+            label
+                .background(.thinMaterial, in: shape)
+                .overlay(shape.stroke(Palette.glassEdge))
         }
     }
 }

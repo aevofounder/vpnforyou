@@ -8,6 +8,80 @@ enum AppearanceKey {
     static let density = "appearance.density"
     static let material = "appearance.material"
     static let hideIP = "privacy.hideIP"
+    static let menuIcon = "appearance.menuIcon"
+    static let cards = "appearance.cards"
+}
+
+/// What the menu bar shows: the shield, a dot, the country code or the speed.
+enum MenuIconStyle: String, CaseIterable, Identifiable {
+    case shield, dot, country, speed
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .shield: "Щит"
+        case .dot: "Точка"
+        case .country: "Код страны"
+        case .speed: "Скорость"
+        }
+    }
+}
+
+/// Cards of the home screen below the status card, in the user's order.
+enum HomeCard: String, CaseIterable, Identifiable {
+    case ip, server, tiles
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .ip: "IP-адрес"
+        case .server: "Текущий сервер"
+        case .tiles: "Плитки: скорость, программы, активность"
+        }
+    }
+}
+
+/// Stored as "ip,server,-tiles": order, and a minus for hidden cards.
+struct CardLayout: Equatable {
+    var items: [(card: HomeCard, visible: Bool)]
+
+    init(_ raw: String) {
+        var items: [(card: HomeCard, visible: Bool)] = []
+        for part in raw.split(separator: ",") {
+            let hidden = part.hasPrefix("-")
+            guard let card = HomeCard(rawValue: String(hidden ? part.dropFirst() : part)),
+                  !items.contains(where: { $0.card == card }) else { continue }
+            items.append((card: card, visible: !hidden))
+        }
+        for card in HomeCard.allCases where !items.contains(where: { $0.card == card }) {
+            items.append((card: card, visible: true))
+        }
+        self.items = items
+    }
+
+    var raw: String {
+        items.map { ($0.visible ? "" : "-") + $0.card.rawValue }.joined(separator: ",")
+    }
+
+    var visibleCards: [HomeCard] {
+        items.filter(\.visible).map(\.card)
+    }
+
+    static func == (lhs: CardLayout, rhs: CardLayout) -> Bool { lhs.raw == rhs.raw }
+
+    mutating func move(_ card: HomeCard, by offset: Int) {
+        guard let index = items.firstIndex(where: { $0.card == card }) else { return }
+        let target = index + offset
+        guard items.indices.contains(target) else { return }
+        items.swapAt(index, target)
+    }
+
+    mutating func setVisible(_ card: HomeCard, _ visible: Bool) {
+        guard let index = items.firstIndex(where: { $0.card == card }) else { return }
+        items[index].visible = visible
+    }
 }
 
 /// Window material. Liquid Glass needs macOS 26; on macOS 14–15
@@ -106,6 +180,8 @@ enum Palette {
     static let ink3 = Color.adaptive(light: 0x686B72, dark: 0x8E9198)
     static let line = Color.adaptive(light: 0xE2E2DD, dark: 0x2C2D31)
     static let track = Color.adaptive(light: 0xCBCBC6, dark: 0x45464C)
+    static let warn = Color.adaptive(light: 0x9A5B00, dark: 0xE0A33A)
+    static let bad = Color.adaptive(light: 0xB3261E, dark: 0xF2766B)
 
     /// Translucent card fill and edge used on top of glass.
     static let glassFill = Color.adaptive(light: 0xFFFFFF, lightAlpha: 0.5, dark: 0xFFFFFF, darkAlpha: 0.06)

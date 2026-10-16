@@ -27,4 +27,18 @@ final class LogRedactorTests: XCTestCase {
         let line = "GET https://api.ipify.org"
         XCTAssertEqual(LogRedactor.redact(line), line)
     }
+
+    func testMasksIPv6ButNotClockTimes() {
+        XCTAssertEqual(LogRedactor.redact("dial [2001:db8::1]:443 at 21:49:03"), "dial [[ip6]]:443 at 21:49:03")
+        XCTAssertEqual(LogRedactor.redact("from 2001:db8:0:0:0:0:0:1"), "from [ip6]")
+        XCTAssertEqual(LogRedactor.redact("level=warning time=12:00:00"), "level=warning time=12:00:00")
+    }
+
+    func testMasksKnownServerHosts() {
+        let line = "connect to nl.example.com:443 failed, retry vpn.nl.example.com"
+        XCTAssertEqual(
+            LogRedactor.redact(line, hosts: ["nl.example.com", "vpn.nl.example.com", "x"]),
+            "connect to [сервер]:443 failed, retry [сервер]"
+        )
+    }
 }
