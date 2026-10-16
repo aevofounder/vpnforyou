@@ -126,6 +126,9 @@ jobs:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: macos-26
     timeout-minutes: 20
+    # The signing key lives in the "beta" environment, open to main only:
+    # a workflow edited on another branch cannot read it.
+    environment: beta
     permissions:
       contents: write # upload to the beta release and move its tag
     concurrency:
@@ -139,7 +142,7 @@ jobs:
           PUBLIC_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
         run: |
           if [ -z "$PRIVATE_KEY" ] || [ -z "$PUBLIC_KEY" ]; then
-            echo "::notice::Бета-канал не настроен: нужны секрет SPARKLE_PRIVATE_KEY и переменная SPARKLE_PUBLIC_KEY (docs/UPDATES.md)."
+            echo "::notice::Бета-канал не настроен: нужны секрет SPARKLE_PRIVATE_KEY в окружении beta и переменная SPARKLE_PUBLIC_KEY (docs/UPDATES.md)."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
