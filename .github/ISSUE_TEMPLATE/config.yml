@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Уязвимость
+    url: https://github.com/aevofounder/vpnforyou/security/advisories/new
+    about: Не открывайте issue, отправьте приватный отчёт.
+  - name: Установка и первый запуск
+    url: https://github.com/aevofounder/vpnforyou/blob/main/docs/INSTALL.md
+    about: Пошаговая инструкция и раздел «Если что-то не работает».

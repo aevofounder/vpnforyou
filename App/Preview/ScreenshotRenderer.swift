@@ -36,45 +36,36 @@ enum ScreenshotRenderer {
             stores.connect()
             return menu(stores, route: .home)
         }
-        await shot("02-home-off", folder, light) { stores in
-            stores.diagnostics.previewSet(directIP: .done(Fixtures.homeIP), vpnIP: .idle, pings: [:],
-                                          speedRun: nil, history: [])
-            return menu(stores, route: .home)
-        }
-        await shot("03-servers", folder, light) { stores in
+        await shot("02-servers", folder, light) { stores in
             stores.connect()
             return menu(stores, route: .servers)
         }
-        await shot("04-speed", folder, light) { stores in
+        await shot("03-speed", folder, light) { stores in
             stores.connect()
             return menu(stores, route: .speed)
         }
-        await shot("05-apps", folder, light) { stores in
+        await shot("04-apps", folder, light) { stores in
             stores.connect()
             return menu(stores, route: .apps)
         }
-        await shot("06-palette", folder, light) { stores in
+        await shot("05-palette", folder, light) { stores in
             stores.connect()
             return menu(stores, route: .palette)
         }
-        await shot("07-activity", folder, light, width: 640, height: 430) { stores in
+        await shot("06-activity", folder, light, width: 640, height: 430) { stores in
             stores.connect()
             let monitor = ActivityMonitor()
             monitor.previewSet(apps: Fixtures.activity, connections: 37)
             return AnyView(stores.inject(ActivityView(monitor: monitor)))
         }
-        await shot("08-settings", folder, light, width: 520) { stores in
+        await shot("07-settings", folder, light, width: 520) { stores in
             AnyView(stores.inject(AppearanceSettingsView()))
         }
-        await shot("09-home-dark", folder, Look(theme: .dark, accent: .violet)) { stores in
+        await shot("08-home-dark", folder, Look(theme: .dark, accent: .violet)) { stores in
             stores.connect()
             return menu(stores, route: .home)
         }
-        await shot("10-servers-dark", folder, Look(theme: .dark, accent: .green)) { stores in
-            stores.connect()
-            return menu(stores, route: .servers)
-        }
-        await shot("11-first-run", folder, light) { stores in
+        await shot("09-first-run", folder, light) { stores in
             let empty = Stores(profiles: [])
             empty.routing.setMode(.all)
             empty.connection.previewSet(helper: .notInstalled, connectedID: nil, since: nil, traffic: [])

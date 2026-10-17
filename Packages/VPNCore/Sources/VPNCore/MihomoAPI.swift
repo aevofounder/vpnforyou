@@ -57,21 +57,14 @@ public struct TrafficTotals: Codable, Equatable, Sendable {
 }
 
 /// One line of `/traffic`: bytes per second.
+/// Bytes per second up and down, one point of the traffic graph.
 public struct TrafficSample: Codable, Equatable, Sendable {
     public var up: Int64
     public var down: Int64
-    public var upTotal: Int64?
-    public var downTotal: Int64?
 
-    public init(up: Int64, down: Int64, upTotal: Int64? = nil, downTotal: Int64? = nil) {
+    public init(up: Int64, down: Int64) {
         self.up = up
         self.down = down
-        self.upTotal = upTotal
-        self.downTotal = downTotal
-    }
-
-    public static func parse(line: String) -> TrafficSample? {
-        try? JSONDecoder().decode(TrafficSample.self, from: Data(line.utf8))
     }
 }
 

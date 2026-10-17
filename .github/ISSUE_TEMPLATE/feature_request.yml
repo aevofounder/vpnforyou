@@ -1,0 +1,28 @@
+name: Идея
+description: Предложить новую возможность или улучшение
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какую задачу хочется решить
+      description: Что неудобно сейчас и когда это мешает.
+      placeholder: Хочу, чтобы Telegram всегда шёл через VPN, даже если я переключаю режим.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Как это могло бы выглядеть
+      description: Если есть представление, где в интерфейсе это живёт. Можно приложить набросок.
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Как вы обходитесь сейчас
+      description: Другие программы или ручные шаги, которые решают задачу.
+    validations:
+      required: false
