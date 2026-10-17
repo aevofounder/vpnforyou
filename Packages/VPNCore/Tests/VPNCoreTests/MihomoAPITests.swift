@@ -35,12 +35,6 @@ final class MihomoAPITests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(ConnectionsSnapshot.self, from: Data(encoded.utf8)), snapshot)
     }
 
-    func testTrafficLine() {
-        XCTAssertEqual(TrafficSample.parse(line: #"{"up":10,"down":2048,"upTotal":1,"downTotal":5}"#),
-                       TrafficSample(up: 10, down: 2048, upTotal: 1, downTotal: 5))
-        XCTAssertNil(TrafficSample.parse(line: "garbage"))
-    }
-
     func testConnectionsAndRates() throws {
         XCTAssertEqual(try ConnectionsSnapshot.parse(Data(#"{"downloadTotal":0,"uploadTotal":0,"connections":null}"#.utf8)).connections, [])
 

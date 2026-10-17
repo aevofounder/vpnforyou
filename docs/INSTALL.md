@@ -5,10 +5,11 @@ VPNforYou работает на macOS 14 Sonoma и новее, на Apple Silico
 
 ## 1. Скачать
 
-- **Релиз:** страница [Releases](https://github.com/aevofounder/vpnforyou/releases), файл `VPNforYou-x.y.z.dmg`.
-- **Тестовая сборка:** вкладка Actions → последний зелёный запуск «Build macOS» → артефакт `VPNforYou.zip`.
+- **Бета (сейчас основной способ):** релиз [`beta`](https://github.com/aevofounder/vpnforyou/releases/tag/beta), файл `VPNforYou-….zip`. Его достаточно поставить один раз: следующие версии приложение поставит само.
+- **Стабильный релиз:** страница [Releases](https://github.com/aevofounder/vpnforyou/releases), файл `VPNforYou-x.y.z.dmg`, когда он выйдет.
+- **Сборка из pull request:** вкладка Actions → запуск «Build macOS» → артефакт `VPNforYou.zip`. Сама такая сборка не обновляется.
 
-Сверьте контрольную сумму с той, что указана в релизе (или в логе сборки):
+Для `.dmg` сверьте контрольную сумму с той, что указана в релизе:
 
 ```sh
 shasum -a 256 ~/Downloads/VPNforYou-x.y.z.dmg
@@ -39,7 +40,7 @@ shasum -a 256 ~/Downloads/VPNforYou-x.y.z.dmg
 
 ## 5. Установить помощника и подключиться
 
-<img src="screenshots/11-first-run.png" width="300" alt="Первый запуск: кнопка «Установить помощника»">
+<img src="screenshots/09-first-run.png" width="300" alt="Первый запуск: кнопка «Установить помощника»">
 
 Для VPN нужны права администратора: ядро создаёт виртуальный сетевой интерфейс и меняет маршруты.
 
@@ -59,7 +60,7 @@ shasum -a 256 ~/Downloads/VPNforYou-x.y.z.dmg
 
 ## 6. Выбрать программы
 
-<img src="screenshots/05-apps.png" width="300" alt="Экран «Программы» с ползунками">
+<img src="screenshots/04-apps.png" width="300" alt="Экран «Программы» с ползунками">
 
 Главный экран → плитка **Программы**:
 
@@ -72,7 +73,7 @@ Safari, Почта и App Store ходят в сеть через системн
 
 Окно **Активность** показывает, какие программы сейчас в сети и идут ли они через VPN.
 
-<img src="screenshots/07-activity.png" width="520" alt="Окно «Активность»">
+<img src="screenshots/06-activity.png" width="520" alt="Окно «Активность»">
 
 ## 7. Полезное
 

@@ -1,0 +1,77 @@
+name: Ошибка
+description: Что-то работает не так, как должно
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Не вставляйте сюда настоящие ключи, ссылки-подписки, адреса и IP серверов.** Issue видят все, а утёкший ключ придётся перевыпускать у продавца VPN.
+        Логи берите только через **Настройки → Основные → Скопировать логи без секретов**: секреты в них уже заменены на `[скрыто]`, `[uuid]`, `[ip]` и `[сервер]`.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: Что случилось
+      description: Что вы делали, что ожидали увидеть и что получилось.
+      placeholder: Включаю VPN, статус «Подключение…» висит минуту и сбрасывается.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Как повторить
+      placeholder: |
+        1. Добавить подписку
+        2. Выбрать сервер
+        3. Включить VPN
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Версия VPNforYou
+      description: Настройки → Основные → Версия.
+      placeholder: 0.1.0, сборка 1792136064
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS и Mac
+      placeholder: macOS 15.5, M2
+    validations:
+      required: true
+
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: Протокол сервера
+      description: Если ошибка связана с подключением.
+      options:
+        - Не знаю или не важно
+        - VLESS Reality
+        - VLESS TLS
+        - VLESS XHTTP
+        - Hysteria2
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Логи без секретов
+      description: Вставьте отчёт из «Скопировать логи без секретов» и просмотрите его перед отправкой.
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: no-secrets
+    attributes:
+      label: Проверка
+      options:
+        - label: В тексте и на скриншотах нет настоящих ключей, подписок, адресов и IP серверов
+          required: true

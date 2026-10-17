@@ -37,7 +37,8 @@ VPN-клиент для macOS в строке меню: импорт ключе�
   - сетевые запросы через `FoundationNetworking` под `#if canImport(FoundationNetworking)` или в слое приложения.
   - `VPNHelperCore` и `vpnforyou-helper`: помощник от имени root (LaunchDaemon). Сокет `0600`, проверка uid, принимает только типизированные команды и сам строит конфиг. Любое изменение здесь — через `security-review`.
 - `project.yml`: проект Xcode генерируется XcodeGen, `.xcodeproj` в git не хранится.
-- `.github/workflows/`: `build-macos.yml` (тесты VPNCore, сборка, ad-hoc подпись, `mihomo -t`, zip), `release.yml` (тег `v*` → `.dmg` и черновик релиза) и `secret-scan.yml` (gitleaks).
+- `.github/workflows/`: `build-macos.yml` (тесты VPNCore, сборка, ad-hoc подпись, `mihomo -t`, zip), `release.yml` (тег `v*` → `.dmg` и черновик релиза), `screenshots.yml` (`[screenshots]` в сообщении коммита → снимки экранов в `docs/screenshots`) и `secret-scan.yml` (gitleaks).
+- `.github/ISSUE_TEMPLATE/`, `pull_request_template.md`, `CONTRIBUTING.md`: шаблоны и правила для участников, в каждом напоминание не присылать настоящие ключи.
 - `scripts/bundle-extras.sh` кладёт в `.app` помощника и ядро, `scripts/make-dmg.sh` собирает `.dmg`.
 - Ядро mihomo скачивается в CI фиксированной версии с проверкой SHA-256 (`scripts/bundle-extras.sh`) и в git не хранится.
 - Стабильные релизы (теги `v*`) ставит и публикует только владелец. Бета-канал публикует CI сам после каждого изменения в `main` (решение владельца): задача `publish-beta` в `build-macos.yml`, подпись ключом из секрета `SPARKLE_PRIVATE_KEY` окружения `beta` (только для `main`), подробности в [docs/UPDATES.md](docs/UPDATES.md). Закрытый ключ обновлений не проси и не выводи в логи.
